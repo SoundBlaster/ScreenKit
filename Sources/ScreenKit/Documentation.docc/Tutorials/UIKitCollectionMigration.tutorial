@@ -50,6 +50,8 @@
     @Section(title: "Update items through ScreenKit") {
         @ContentAndMedia {
             ScreenKit owns snapshot application. Keep stable, unique item identifiers and pass the latest model values to the controller instead of retaining a second diffable data source in the feature.
+
+            To mix legacy cells with configuration-based, `UIView`, and SwiftUI rows while keeping collection and snapshot ownership in ScreenKit, continue with the [Patchwork migration tutorial](https://soundblaster.github.io/Patchwork/tutorials/patchwork/uikitmigrationwithpatchwork/).
         }
 
         @Steps {
@@ -61,15 +63,4 @@
         }
     }
 
-    @Section(title: "Continue the migration") {
-        @ContentAndMedia {
-            Use ``Screen``, ``ScreenCellRenderer``, and ``ScreenViewController`` as the screen boundary. To render old cells beside configuration-based, `UIView`, and SwiftUI rows, continue with the [Patchwork migration tutorial](https://soundblaster.github.io/Patchwork/tutorials/patchwork/uikitmigrationwithpatchwork/).
-        }
-
-        @Steps {
-            @Step {
-                Open the Patchwork tutorial to add other content types while keeping this ScreenKit list and its data-source lifecycle.
-            }
-        }
-    }
 }
