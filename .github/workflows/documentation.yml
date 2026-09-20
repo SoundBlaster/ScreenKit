@@ -28,8 +28,6 @@ jobs:
 
       - name: Generate static DocC site
         run: |
-          # SwiftSyntax 602 macro-support binaries require macOS 15 on the host.
-          export MACOSX_DEPLOYMENT_TARGET=15.0
           IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           swift package \
             --triple arm64-apple-ios18.0 \

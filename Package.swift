@@ -5,8 +5,10 @@ import CompilerPluginSupport
 
 let package = Package(
     name: "ScreenKit",
+    // SwiftPM builds the macro target on the host; SwiftSyntax 602 requires macOS 10.15+.
     platforms: [
-        .iOS(.v18)
+        .iOS(.v18),
+        .macOS(.v10_15)
     ],
     products: [
         .library(name: "ScreenKit", targets: ["ScreenKit"])
