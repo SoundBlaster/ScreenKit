@@ -12,13 +12,19 @@ across updates.
 ```swift
 import ScreenKit
 
-let screen = Screen(items) { item in
+let screen = #screen(items) { item in
     // Return a ScreenCellRenderer supplied by ScreenKit or an adapter package.
 }
     .title { "Products" }
 
 let controller = screen.makeViewController()
 ```
+
+`#screen(items, renderer:)` is a stateless convenience for the single-section
+initializer. Use `Screen([ScreenSection(...)], renderer:)` when section identities
+or multiple sections are needed. The macro does not own screen state; application
+features continue to own their models and updates. To write the single-section
+initializer explicitly, use `Screen(items, renderer: renderer)`.
 
 `ControllerScreen` adapts an existing controller factory during incremental
 migration. `NavigationScreen`, `TabsScreen`, `PagesScreen`, and `SplitScreen`

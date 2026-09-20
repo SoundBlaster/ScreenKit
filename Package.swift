@@ -1,6 +1,7 @@
 // swift-tools-version: 6.2
 
 import PackageDescription
+import CompilerPluginSupport
 
 let package = Package(
     name: "ScreenKit",
@@ -10,8 +11,28 @@ let package = Package(
     products: [
         .library(name: "ScreenKit", targets: ["ScreenKit"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0")
+    ],
     targets: [
-        .target(name: "ScreenKit"),
-        .testTarget(name: "ScreenKitTests", dependencies: ["ScreenKit"])
+        .macro(
+            name: "ScreenKitMacros",
+            dependencies: [
+                .product(name: "SwiftSyntax", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+                .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+                .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+                .product(name: "SwiftDiagnostics", package: "swift-syntax")
+            ]
+        ),
+        .target(name: "ScreenKit", dependencies: ["ScreenKitMacros"]),
+        .testTarget(name: "ScreenKitTests", dependencies: ["ScreenKit"]),
+        .testTarget(
+            name: "ScreenKitMacroTests",
+            dependencies: [
+                "ScreenKitMacros",
+                .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax")
+            ]
+        )
     ]
 )
