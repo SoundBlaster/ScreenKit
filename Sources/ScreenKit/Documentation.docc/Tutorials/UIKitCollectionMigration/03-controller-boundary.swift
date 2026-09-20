@@ -16,7 +16,11 @@ func productsScreen(_ products: [Product]) -> Screen<Int, Product> {
         cell.contentConfiguration = content
     }
     let renderer = ScreenCellRenderer<Product> { collection, indexPath, product in
-        collection.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: product)
+        collection.dequeueConfiguredReusableCell(
+            using: registration,
+            for: indexPath,
+            item: product
+        )
     }
     return #screen(products) { _ in renderer }
         .title { "Products" }
