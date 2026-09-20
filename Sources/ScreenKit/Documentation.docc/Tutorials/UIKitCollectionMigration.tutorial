@@ -28,7 +28,7 @@
             @Step {
                 Replace the controller's collection and data-source setup with `#screen` and a reusable cell renderer.
 
-                @Code(name: "ProductsScreen.swift", file: "02-screen-value.swift")
+                @Code(name: "ProductsScreen.swift", file: "02-screen-value.swift", previousFile: "01-uikit-controller.swift")
             }
         }
     }
@@ -42,7 +42,7 @@
             @Step {
                 Materialize the screen only when presenting it in the existing UIKit flow.
 
-                @Code(name: "ProductsScene.swift", file: "03-controller-boundary.swift")
+                @Code(name: "ProductsScene.swift", file: "03-controller-boundary.swift", previousFile: "02-screen-value.swift")
             }
         }
     }
@@ -56,7 +56,7 @@
             @Step {
                 Replace the list contents through `setItems` while leaving navigation and model ownership in the app.
 
-                @Code(name: "ProductsScene.swift", file: "04-update-items.swift")
+                @Code(name: "ProductsScene.swift", file: "04-update-items.swift", previousFile: "03-controller-boundary.swift")
             }
         }
     }
