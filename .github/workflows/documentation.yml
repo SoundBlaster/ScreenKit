@@ -1,0 +1,80 @@
+name: Deploy DocC Documentation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Generate static DocC site
+        run: |
+          IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          swift package \
+            --triple arm64-apple-ios18.0 \
+            --sdk "$IOS_SDK" \
+            --allow-writing-to-directory ./docs \
+            generate-documentation \
+            --target ScreenKit \
+            --output-path ./docs \
+            --transform-for-static-hosting \
+            --hosting-base-path ScreenKit
+
+      - name: Add Pages landing page
+        run: |
+          touch docs/.nojekyll
+          cat > docs/index.html << 'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0; url=./documentation/screenkit/">
+            <link rel="canonical" href="./documentation/screenkit/">
+            <title>ScreenKit Documentation</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="./documentation/screenkit/">ScreenKit Documentation</a>…</p>
+            <script>window.location.replace("./documentation/screenkit/");</script>
+          </body>
+          </html>
+          HTML
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./docs
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

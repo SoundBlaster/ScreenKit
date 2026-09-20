@@ -33,6 +33,10 @@ compose screens without introducing a base controller type.
 ScreenKit deliberately does not define product models, business actions, or a
 state manager. It fits below page and flow modules in an FSD-style architecture.
 
+## Documentation
+
+Browse the [ScreenKit API documentation](https://soundblaster.github.io/ScreenKit/).
+
 ## Development
 
 UIKit tests run from an iOS simulator. The app-level ScreenKitLab integration
