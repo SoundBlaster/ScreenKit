@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" role="img" aria-labelledby="title desc">
+  <title id="title">ScreenKit migration stages</title>
+  <desc id="desc">A UIKit controller hands collection rendering to a Screen value, which creates a controller at the app navigation boundary.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#52606d"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, sans-serif; fill: #17212b; }
+      .title { font-size: 20px; font-weight: 650; }
+      .body { font-size: 14px; }
+      .card { fill: #f3f6f8; stroke: #8a9aa8; stroke-width: 2; rx: 14; }
+      .accent { fill: #e5f1ff; stroke: #3976b8; }
+      .arrow { stroke: #52606d; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="900" height="220" fill="#ffffff"/>
+  <rect class="card" x="25" y="48" width="230" height="124"/>
+  <text class="title" x="140" y="83" text-anchor="middle">UIKit controller</text>
+  <text class="body" x="140" y="112" text-anchor="middle">collection + data source</text>
+  <text class="body" x="140" y="136" text-anchor="middle">snapshot + cell setup</text>
+  <path class="arrow" d="M270 110H330"/>
+  <rect class="card accent" x="345" y="48" width="210" height="124"/>
+  <text class="title" x="450" y="83" text-anchor="middle">Screen value</text>
+  <text class="body" x="450" y="112" text-anchor="middle">#screen + renderer</text>
+  <text class="body" x="450" y="136" text-anchor="middle">ScreenKit owns updates</text>
+  <path class="arrow" d="M570 110H630"/>
+  <rect class="card" x="645" y="48" width="230" height="124"/>
+  <text class="title" x="760" y="83" text-anchor="middle">UIKit boundary</text>
+  <text class="body" x="760" y="112" text-anchor="middle">makeViewController()</text>
+  <text class="body" x="760" y="136" text-anchor="middle">existing navigation flow</text>
+</svg>

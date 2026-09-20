@@ -1,0 +1,12 @@
+@Tutorials(name: "ScreenKit Migration Tutorials") {
+    @Intro(title: "Move a UIKit list screen to ScreenKit") {
+        Learn how to migrate a collection-backed UIKit screen in stages while keeping your app's navigation and feature-owned models.
+    }
+
+    @Chapter(name: "Migrate a UIKit Collection Screen") {
+        Replace view-controller-owned collection and snapshot code with a ScreenKit screen value, then keep the existing UIKit navigation boundary.
+        @Image(source: "screenkit-migration-map", alt: "Three stages show UIKit collection and snapshot code moving into a Screen value, then creating a UIViewController at the existing app navigation boundary.")
+        @TutorialReference(tutorial: "doc:UIKitCollectionMigration")
+    }
+
+}
