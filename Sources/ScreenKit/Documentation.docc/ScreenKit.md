@@ -90,3 +90,11 @@ when a collection needs to hold different screen types.
 - ``TabsScreen``
 - ``PagesScreen``
 - ``SplitScreen``
+
+## Migration tutorial
+
+- <doc:UIKitCollectionMigration>
+
+## See Also
+
+- [Continue by mixing legacy UIKit and SwiftUI content with Patchwork](https://soundblaster.github.io/Patchwork/tutorials/patchwork/uikitmigrationwithpatchwork/)

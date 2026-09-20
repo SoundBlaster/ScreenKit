@@ -1,0 +1,75 @@
+@Tutorial(time: 20) {
+    @Intro(title: "Migrate a UIKit Collection Screen to ScreenKit") {
+        Move a products list from a view controller that owns its collection view and diffable data source to a ScreenKit screen value. You will keep the existing UIKit navigation controller and feature-owned product model.
+
+        This guide targets iOS 18 and later and a `UICollectionView`-backed list. ScreenKit creates a collection-backed controller; it does not wrap a `UITableView` or take ownership of application state.
+    }
+
+    @Section(title: "Start with a UIKit-owned collection") {
+        @ContentAndMedia {
+            The baseline keeps layout, cell registration, the diffable data source, and snapshot updates inside one `UIViewController`. Use it to identify the collection and rendering responsibilities that can move behind ScreenKit's screen description.
+        }
+
+        @Steps {
+            @Step {
+                Create the usual UIKit controller with a list layout, cell registration, and diffable snapshot.
+
+                @Code(name: "ProductsViewController.swift", file: "01-uikit-controller.swift")
+            }
+        }
+    }
+
+    @Section(title: "Describe the screen as a value") {
+        @ContentAndMedia {
+            Keep `Product` in the feature, and provide ScreenKit with a renderer value. Retain the renderer outside the per-item closure so its identity remains stable when the item list changes.
+        }
+
+        @Steps {
+            @Step {
+                Replace the controller's collection and data-source setup with `#screen` and a reusable cell renderer.
+
+                @Code(name: "ProductsScreen.swift", file: "02-screen-value.swift")
+            }
+        }
+    }
+
+    @Section(title: "Create the UIKit controller at the boundary") {
+        @ContentAndMedia {
+            A `Screen` is a value until the app needs a `UIViewController`. Push the created controller through the navigation controller you already use; there is no ScreenKit base class to inherit from.
+        }
+
+        @Steps {
+            @Step {
+                Materialize the screen only when presenting it in the existing UIKit flow.
+
+                @Code(name: "ProductsScene.swift", file: "03-controller-boundary.swift")
+            }
+        }
+    }
+
+    @Section(title: "Update items through ScreenKit") {
+        @ContentAndMedia {
+            ScreenKit owns snapshot application. Keep stable, unique item identifiers and pass the latest model values to the controller instead of retaining a second diffable data source in the feature.
+        }
+
+        @Steps {
+            @Step {
+                Replace the list contents through `setItems` while leaving navigation and model ownership in the app.
+
+                @Code(name: "ProductsScene.swift", file: "04-update-items.swift")
+            }
+        }
+    }
+
+    @Section(title: "Continue the migration") {
+        @ContentAndMedia {
+            Use ``Screen``, ``ScreenCellRenderer``, and ``ScreenViewController`` as the screen boundary. To render old cells beside configuration-based, `UIView`, and SwiftUI rows, continue with the [Patchwork migration tutorial](https://soundblaster.github.io/Patchwork/tutorials/patchwork/uikitmigrationwithpatchwork/).
+        }
+
+        @Steps {
+            @Step {
+                Open the Patchwork tutorial to add other content types while keeping this ScreenKit list and its data-source lifecycle.
+            }
+        }
+    }
+}
