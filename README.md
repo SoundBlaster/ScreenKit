@@ -1,5 +1,11 @@
 # ScreenKit
 
+[![DocC](https://github.com/SoundBlaster/ScreenKit/actions/workflows/documentation.yml/badge.svg?branch=main)](https://github.com/SoundBlaster/ScreenKit/actions/workflows/documentation.yml)
+[![Documentation](https://img.shields.io/badge/Documentation-DocC-blue)](https://soundblaster.github.io/ScreenKit/)
+![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-orange?logo=swift)
+![iOS 18+](https://img.shields.io/badge/iOS-18%2B-lightgrey?logo=apple)
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 ScreenKit builds UIKit screens as values. A screen describes its content and
 creates a fresh `UIViewController` only at the composition boundary; application
 code does not need to subclass `UIViewController`.
