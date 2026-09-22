@@ -8,7 +8,6 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
     internal let renderer: (Item) -> ScreenCellRenderer<Item>
     internal var itemIDProvider: ((Item) -> Item.ID)? = nil
     internal var stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>])?
-    internal var stateOwner: AnyObject?
     internal var titleProvider: () -> String = { "" }
     internal var sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     internal var supplementaryRenderers: [ScreenSupplementaryRenderer<SectionID>] = []
@@ -24,10 +23,10 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
         renderer: @escaping (State.Section.Item) -> ScreenCellRenderer<State.Section.Item>
     ) where SectionID == State.Section.ID, Item == State.Section.Item {
         self.init([], renderer: renderer)
-        stateOwner = state
         itemIDProvider = { $0.stableID }
-        stateReader = {
-            state.sections.map { section in
+        stateReader = { [weak state] in
+            guard let state else { return [] }
+            return state.sections.map { section in
                 ScreenSection(id: section.stableID, items: section.items)
             }
         }

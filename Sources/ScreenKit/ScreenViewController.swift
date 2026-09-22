@@ -23,8 +23,6 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     public private(set) var collectionView: UICollectionView!
     private var initialSections: [ScreenSection<SectionID, Item>]?
     private let stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>])?
-    // Retain the feature-owned state for as long as this screen exists.
-    private let stateOwner: AnyObject?
     private let renderer: (Item) -> ScreenCellRenderer<Item>
     private let itemIDProvider: (Item) -> Item.ID
     private let titleProvider: () -> String
@@ -54,7 +52,6 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     internal init(screen: Screen<SectionID, Item>) {
         initialSections = screen.sections
         stateReader = screen.stateReader
-        stateOwner = screen.stateOwner
         stateUpdateRelay = screen.stateReader == nil ? nil : StateUpdateRelay()
         renderer = screen.renderer
         itemIDProvider = screen.itemIDProvider ?? { $0.id }

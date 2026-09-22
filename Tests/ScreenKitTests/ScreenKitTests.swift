@@ -5,6 +5,20 @@ import ScreenKit
 
 @MainActor
 final class ScreenKitTests: XCTestCase {
+    final class ProbeCell: UICollectionViewCell {
+        var renderedTitle = ""
+    }
+
+    private func waitUntil(
+        _ predicate: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        for _ in 0..<1_000 {
+            if predicate() { return true }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        return predicate()
+    }
+
     struct Item: Identifiable, Sendable {
         let id: Int
     }
@@ -26,7 +40,6 @@ final class ScreenKitTests: XCTestCase {
     final class State: ScreenState {
         var sections: [Section]
         var useAlternateRenderer = false
-
         init(sections: [Section]) {
             self.sections = sections
         }
@@ -76,14 +89,12 @@ final class ScreenKitTests: XCTestCase {
         XCTAssertEqual(controller.sectionIDs, ["catalog"])
         XCTAssertEqual(controller.itemIDs, [101])
 
-        let update = expectation(description: "state mutation updates the snapshot")
         state.sections[0].items.append(StableItem(stableID: 102, id: 2, title: "Two"))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(controller.sectionIDs, ["catalog"])
-            XCTAssertEqual(controller.itemIDs(in: "catalog"), [101, 102])
-            update.fulfill()
+        let didUpdate = await waitUntil {
+            controller.itemIDs(in: "catalog") == [101, 102]
         }
-        await fulfillment(of: [update], timeout: 1)
+        XCTAssertTrue(didUpdate)
+        XCTAssertEqual(controller.sectionIDs, ["catalog"])
     }
 
     func testReactiveRendererFactoryReadsAreTracked() async {
@@ -106,13 +117,41 @@ final class ScreenKitTests: XCTestCase {
         XCTAssertEqual(normalFactoryCalls, 1)
         XCTAssertEqual(alternateFactoryCalls, 0)
 
-        let update = expectation(description: "renderer factory observes state")
         state.useAlternateRenderer = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertGreaterThan(alternateFactoryCalls, 0)
-            update.fulfill()
+        let didUpdate = await waitUntil { alternateFactoryCalls > 0 }
+        XCTAssertTrue(didUpdate)
+    }
+
+    func testReactiveRendererUpdatesRenderedCellContent() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        let screen = #screen(state) { item in
+            let title = state.useAlternateRenderer ? "Alternate" : item.title
+            return ScreenCellRenderer { _, _, _ in
+                let cell = ProbeCell()
+                cell.renderedTitle = title
+                return cell
+            }
         }
-        await fulfillment(of: [update], timeout: 1)
+        let controller = screen.makeViewController()
+        _ = controller.itemIDs
+        let indexPath = IndexPath(item: 0, section: 0)
+        let initialCell = controller.collectionView.dataSource?.collectionView(
+            controller.collectionView,
+            cellForItemAt: indexPath
+        ) as? ProbeCell
+        XCTAssertEqual(initialCell?.renderedTitle, "One")
+
+        state.useAlternateRenderer = true
+        let didUpdate = await waitUntil {
+            let updatedCell = controller.collectionView.dataSource?.collectionView(
+                controller.collectionView,
+                cellForItemAt: indexPath
+            ) as? ProbeCell
+            return updatedCell?.renderedTitle == "Alternate"
+        }
+        XCTAssertTrue(didUpdate)
     }
 
     func testReactiveControllersObserveSharedStateIndependently() async {
@@ -128,14 +167,33 @@ final class ScreenKitTests: XCTestCase {
         _ = first.itemIDs
         _ = second.itemIDs
 
-        let update = expectation(description: "both controllers observe the mutation")
         state.sections.append(Section(stableID: "recent", id: "recent", items: []))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            XCTAssertEqual(first.sectionIDs, ["catalog", "recent"])
-            XCTAssertEqual(second.sectionIDs, ["catalog", "recent"])
-            update.fulfill()
+        let didUpdate = await waitUntil {
+            first.sectionIDs == ["catalog", "recent"]
+                && second.sectionIDs == ["catalog", "recent"]
         }
-        await fulfillment(of: [update], timeout: 1)
+        XCTAssertTrue(didUpdate)
+    }
+
+    func testReactiveUpdatesCoalesceStateMutations() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        var factoryCalls = 0
+        let screen = #screen(state) { _ in
+            factoryCalls += 1
+            return ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
+        }
+        let controller = screen.makeViewController()
+        _ = controller.itemIDs
+        XCTAssertEqual(factoryCalls, 1)
+
+        state.sections[0].items[0].title = "Updated"
+        state.useAlternateRenderer = true
+
+        let didUpdate = await waitUntil { factoryCalls == 2 }
+        XCTAssertTrue(didUpdate)
+        XCTAssertEqual(factoryCalls, 2)
     }
 
     func testReactiveControllerDoesNotRetainState() {
@@ -149,6 +207,7 @@ final class ScreenKitTests: XCTestCase {
             controller = #screen(state) { _ in
                 ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
             }.makeViewController()
+            _ = controller?.itemIDs
         }
         XCTAssertNotNil(controller)
         controller = nil
