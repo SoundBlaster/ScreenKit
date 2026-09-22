@@ -95,8 +95,12 @@ The same scheduling path covers reads made by:
 Snapshot application is serialized through the update queue. Reentrant state
 changes and completion handlers are queued behind the active update, so an
 observation is not registered repeatedly and snapshot application cannot create
-a recursive update loop. The relay keeps a weak controller reference; releasing
-the controller or state must not retain the other object or pending work.
+a recursive update loop. The relay keeps a weak controller reference, and its
+internal state-reader reference does not retain the state. Client-supplied
+title, layout, renderer, and supplementary closures may capture state strongly;
+the no-retention guarantee does not override those captures. Clients that need
+state to be released before the controller should use weak captures in those
+closures as well.
 
 ## Delivered implementation
 
