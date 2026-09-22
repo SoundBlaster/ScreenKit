@@ -77,6 +77,8 @@ state manager. It fits below page and flow modules in an FSD-style architecture.
 ## Documentation
 
 Browse the [ScreenKit API documentation](https://soundblaster.github.io/ScreenKit/).
+The implementation roadmap for state, identity, and observation is documented
+in [`ROADMAP.md`](ROADMAP.md).
 
 ## Development
 
