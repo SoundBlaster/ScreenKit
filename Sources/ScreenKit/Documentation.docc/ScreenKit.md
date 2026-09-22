@@ -73,10 +73,13 @@ a scheduled update may be applied together; this is not a transaction boundary.
 lag behind the state. ScreenKit uses `Observation.withObservationTracking`, so
 no observation-specific Info.plist key is required.
 
-The feature must retain the state while it expects the screen to update; the
-controller does not retain it. If state is released before the first read, the
-screen starts empty. If state is released after a snapshot is applied, the
-controller keeps that snapshot and receives no further state updates.
+The feature should retain the state while it expects the screen to update. The
+controller's internal state reader holds it weakly, but retained renderers,
+title, layout, or supplementary closures and item values can capture it
+strongly. If none of those retained values keeps state alive, releasing it
+before the first read makes the screen start empty; releasing it after a
+snapshot is applied leaves the controller showing that snapshot with no further
+state updates.
 
 ```swift
 import Observation

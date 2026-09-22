@@ -19,9 +19,10 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
 
     /// Creates a reactive screen from a feature-owned observable state.
     ///
-    /// The feature must retain the state while it expects the screen to update.
-    /// The controller does not retain the state; if it is released, the screen
-    /// keeps its last applied snapshot.
+    /// The feature should retain the state while it expects the screen to update.
+    /// The internal state reader holds it weakly, although retained client
+    /// closures or item values may hold it strongly. If state is released after
+    /// a snapshot is applied, the screen keeps that snapshot.
     public init<State: ScreenState>(
         _ state: State,
         renderer: @escaping (State.Section.Item) -> ScreenCellRenderer<State.Section.Item>

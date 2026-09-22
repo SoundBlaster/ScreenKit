@@ -40,10 +40,13 @@ not a transaction boundary. ID accessors report the applied snapshot and may
 briefly lag behind state. Item and section models must provide stable IDs through
 `StableIdentifiable`.
 
-The feature must retain state while it expects the screen to update. Controllers
-do not retain state. If state is released before the first read, the screen
-starts empty; if it is released after a snapshot is applied, the controller
-keeps that snapshot and receives no further state updates.
+The feature should retain state while it expects the screen to update. The
+controller's internal state reader holds state weakly, but retained renderers,
+title, layout, or supplementary closures and item values can capture it strongly.
+When none of those retained values keeps state alive, releasing it before the
+first read makes the screen start empty; releasing it after a snapshot is
+applied leaves the controller showing that last snapshot with no further state
+updates.
 
 `setSections` and `setItems` update stateless screens. Calls on state-backed
 screens are ignored and logged, and their completion closures are not called;
