@@ -1,11 +1,15 @@
 #if canImport(UIKit)
 import Observation
 import XCTest
-import ScreenKit
+@testable import ScreenKit
 
 @MainActor
 final class ScreenKitTests: XCTestCase {
     final class ProbeCell: UICollectionViewCell {
+        var renderedTitle = ""
+    }
+
+    final class ProbeHeader: UICollectionReusableView {
         var renderedTitle = ""
     }
 
@@ -39,6 +43,7 @@ final class ScreenKitTests: XCTestCase {
     @Observable
     final class State: ScreenState {
         var sections: [Section]
+        var headerTitle = "One"
         var useAlternateRenderer = false
         init(sections: [Section]) {
             self.sections = sections
@@ -194,6 +199,36 @@ final class ScreenKitTests: XCTestCase {
         let didUpdate = await waitUntil { factoryCalls == 2 }
         XCTAssertTrue(didUpdate)
         XCTAssertEqual(factoryCalls, 2)
+    }
+
+    func testSupplementaryRendererUpdatesOriginalViewContentAfterStateChanges() {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        let header = ProbeHeader()
+        let supplementary = ScreenSupplementaryRenderer<String>(
+            elementKind: UICollectionView.elementKindSectionHeader,
+            make: { _, _ in header },
+            update: { (view: ProbeHeader, _) in
+                view.renderedTitle = state.headerTitle
+            }
+        )
+        let collection = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let first = supplementary.view(
+            in: collection,
+            at: IndexPath(item: 0, section: 0),
+            sectionID: "catalog"
+        ) as? ProbeHeader
+        XCTAssertTrue(first === header)
+        XCTAssertEqual(header.renderedTitle, "One")
+
+        state.headerTitle = "Two"
+        supplementary.update(header, sectionID: "catalog")
+        XCTAssertEqual(header.renderedTitle, "Two")
+
+        state.headerTitle = "Three"
+        supplementary.update(header, sectionID: "catalog")
+        XCTAssertEqual(header.renderedTitle, "Three")
     }
 
     func testReactiveControllerDoesNotRetainState() {
