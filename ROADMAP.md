@@ -33,12 +33,14 @@ final class ProductsState: ScreenState {
 }
 
 struct ProductsSection: ScreenSectionModel {
-    let stableID: UUID
+    typealias ID = UUID
+    let stableID: ID
     var items: [Product]
 }
 
 struct Product: StableIdentifiable {
-    let stableID: UUID
+    typealias ID = UUID
+    let stableID: ID
     var name: String
 }
 ```
@@ -102,6 +104,61 @@ the no-retention guarantee does not override those captures. Clients that need
 state to be released before the controller should use weak captures in those
 closures as well.
 
+## Public API review
+
+This section records the review decisions and separates the intended contract
+from behavior that still needs implementation. Names are retained for now:
+`ScreenState` describes the feature-owned source, `ScreenSectionModel` separates
+that source model from the explicit `ScreenSection` value, and
+`StableIdentifiable` describes the identity capability. The review found no
+clear naming improvement that justifies a source-breaking rename.
+
+### State ownership and update authority
+
+- The feature or its coordinator owns and retains a state value for as long as
+  the screen is in use. Passing state to `Screen` does not transfer ownership
+  to the controller.
+- If the weakly held state has been released, the current reader returns an
+  empty section list. This behavior is ambiguous and must not be presented as a
+  supported way to clear a screen. Before release, choose and document a
+  deliberate diagnostic policy for a missing state.
+- For a reactive screen, state is the sole authority for sections and items.
+  The public `setSections` and `setItems` methods currently allow an independent
+  snapshot to be applied; a later state observation replaces it. Before release,
+  prevent this conflicting update or define a deliberate state-backed API for
+  it. Keep `refreshContent`, `refreshSupplementaryContent`, and
+  `invalidateLayout` available for explicit refreshes of non-observed inputs.
+- State observations schedule work asynchronously on the main actor and the
+  resulting snapshot currently animates. Document that ID accessors report the
+  controller's applied snapshot, which may briefly lag behind state. Do not
+  promise that arbitrary mutations always become exactly one diff; the current
+  coalescing boundary is the scheduled update, not a transaction over user code.
+  Decide whether reactive updates need an animation policy before exposing one.
+
+### Identity and diagnostics
+
+- Reactive screens use `stableID` for section and item identity in every
+  snapshot, lookup map, renderer comparison, reload, reconfigure, and public ID
+  accessor. They never fall back to a different legacy `id` value.
+- Because `StableIdentifiable` refines `Identifiable`, `stableID` and `id` have
+  the same associated type. A legacy model with (for example) `id: Int` cannot
+  adopt a `stableID: UUID` without changing or adapting its `Identifiable.ID`
+  type. Keep this constraint for now and document it explicitly.
+- Section IDs must be unique among sections. Item IDs must be unique across all
+  sections because the diffable data source has one item identity space. If the
+  same domain entity appears as two independent rows, those presentations need
+  distinct stable IDs; moving one row between sections should preserve its ID.
+- Duplicate IDs are programmer errors and currently trigger preconditions
+  before snapshot application. Improve the diagnostics to identify the
+  conflicting positions and section context. Add negative tests so the
+  precondition behavior is verified, not merely present in source.
+- Runtime checks can detect duplicates in one snapshot, but cannot prove that
+  an ID remains stable across time. State this as a caller requirement.
+
+New conformers should have a compile-checked example that declares the
+`Identifiable.ID` type explicitly and implements only `stableID`; legacy
+conformances should separately demonstrate the supported same-ID-type adapter.
+
 ## Delivered implementation
 
 The initial implementation and its verification were delivered in:
@@ -121,34 +178,69 @@ The external consumer proof lives in `ScreenKit-Examples` (`ScreenKitLab` and
 
 ## Verification matrix
 
-Keep this matrix current when changing the state or observation implementation.
+This matrix distinguishes source implementation from direct behavioral
+evidence. A feature is only marked verified when a test exercises that path.
+The entries below are an audit of the checked-in tests and examples at this
+revision; they are not a report that the release gates were rerun.
 
-### Behavior
+### Reactive behavior directly covered in ScreenKit tests
 
-- [x] Add, remove, and reorder sections.
-- [x] Add, remove, and reorder items.
-- [x] Change item content while preserving `stableID`.
-- [x] Support a legacy item whose legacy `id` differs from `stableID`.
-- [x] React when state changes renderer selection.
-- [x] React when state is read by the cell renderer.
-- [x] React when state is read by the layout provider.
-- [x] React when state is read by a supplementary renderer before the view
-      appears and after it becomes visible.
-- [x] Coalesce multiple mutations into one snapshot update.
-- [x] Observe two controllers backed by the same state independently.
-- [x] Release controller and state without retaining the relay.
-- [x] Diagnose duplicate section and item IDs before snapshot application.
+- [x] Use `stableID` rather than a different legacy `id` value for state-backed
+      section and item snapshots.
+- [x] Recompute renderer selection after an observed state property changes.
+- [x] Update a rendered cell after a state property read by its renderer changes.
+- [x] Observe shared state independently from two controllers.
+- [x] Coalesce the tested burst of state mutations into one renderer-factory
+      update.
+- [x] Release state when the controller is released and client closures do not
+      retain it.
 
-### API and documentation
+### Reactive behavior still needing direct tests
 
-- [x] Keep `stableID` as the sole identity source for reactive screens.
-- [x] Keep explicit `Screen(items, renderer:)` and `ScreenSection` behavior.
-- [x] Provide a compile-level example for a new `StableIdentifiable` type.
-- [x] Provide a regression example for a legacy model with a different `id`.
-- [x] Document state ownership, identity requirements, and update timing.
+- [ ] Add, remove, and reorder reactive sections; current state-backed coverage
+      proves adding an item, not the full section operation set.
+- [ ] Add, remove, reorder, and move reactive items between sections.
+- [ ] Change an item's own content while preserving its `stableID` and verify
+      the visible cell payload updates.
+- [ ] Verify state reads in the layout provider on the iOS 18 fallback path.
+- [ ] Verify observation during supplementary-view creation and repeated
+      updates to the same visible supplementary view through a reactive
+      controller.
+- [ ] Verify duplicate section IDs and globally duplicate item IDs fail before
+      snapshot application.
+- [ ] Verify an explicit `setSections`/`setItems` call on a reactive controller
+      follows the final documented authority rule.
+- [ ] Verify the chosen behavior when a reactive controller outlives its state.
+
+The ScreenKitLab header UI test uses the explicit `Screen(sections, renderer:)`
+initializer and calls `refreshSupplementaryContent`; it verifies explicit
+refresh after scrolling, not automatic observation through `ScreenState`.
+
+### Explicit API and compile-level evidence
+
+- [x] Explicit APIs expose caller-provided section and item IDs.
+- [x] The package regression test verifies a state-backed model whose legacy
+      `id` value differs from `stableID`.
+- [ ] Compile a new `StableIdentifiable` model that defines only `stableID`
+      plus an explicit `typealias ID`.
+- [ ] Compile a legacy adapter with the same `Identifiable.ID` type and verify
+      that reactive snapshots still use `stableID` when its value differs from
+      the model's existing `id`.
+- [ ] Add negative macro tests for malformed `#screen` argument shapes and
+      assert the diagnostic text and source location.
+- [ ] Add duplicate-ID diagnostic tests and assert useful conflict context.
+- [ ] Document which controller update methods are valid on reactive screens.
+- [ ] Document state lifetime, snapshot-vs-state timing, identity namespaces,
+      and the same-type `Identifiable.ID` constraint in README and DocC.
 - [x] Explain that iOS 27 is not required for reactive behavior.
-- [x] Keep README and DocC examples executable: state examples start with a
-      section or show the section being added.
+- [x] Keep README and DocC state examples executable: they start with a section
+      or show the section being added.
+
+### Previously completed release evidence
+
+The prior iOS 18 simulator test, DocC build, symbol scan, and consumer CI results
+are recorded in their original PRs. Fresh results are required for a release;
+the API audit did not rerun these gates.
 
 ### Release gates
 
@@ -166,13 +258,15 @@ requirement for iOS 27-only APIs in the reactive path.
 
 ## Next planned work
 
-The next implementation changes should be treated as a separate task from this
-baseline:
+The next changes should be delivered in small, reviewable steps:
 
-1. Review the public `ScreenState`, `ScreenSectionModel`, and
-   `StableIdentifiable` names and diagnostics against Swift API Design
-   Guidelines.
-2. Expand the app-level iOS 18 UI coverage for a header that appears after
-   scrolling and then changes more than once.
-3. Re-run the complete release-gate matrix and attach fresh evidence before
-   publishing the next package version.
+1. Resolve reactive update authority, lost-state behavior, snapshot timing, and
+   animation policy; update public API documentation to match.
+2. Add focused tests for duplicate IDs, the `stableID`-only conformance,
+   reactive sections/items, iOS 18 layout observation, and reactive
+   supplementary observation. Keep the existing explicit-refresh UI test
+   labeled as such.
+3. Update README and DocC from the finalized contracts, then reconcile every
+   verification row against an executable test.
+4. Re-run the release-gate matrix and attach fresh evidence before publishing
+   the next package version.
