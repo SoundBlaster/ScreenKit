@@ -214,9 +214,12 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         completion: (@MainActor () -> Void)?
     ) {
         let sectionIDs = sections.map(\.id)
-        precondition(Set(sectionIDs).count == sectionIDs.count, "Screen section IDs must be unique")
-        let ids = sections.flatMap { $0.items.map(itemIDProvider) }
-        precondition(Set(ids).count == ids.count, "Screen item IDs must be globally unique")
+        if let message = ScreenIdentityValidator.duplicateSectionMessage(in: sectionIDs) {
+            preconditionFailure(message)
+        }
+        if let message = ScreenIdentityValidator.duplicateItemMessage(in: sections, id: itemIDProvider) {
+            preconditionFailure(message)
+        }
         enqueue(.sections(sections, animated: animated), completion: completion)
     }
 

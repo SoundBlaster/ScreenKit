@@ -80,9 +80,31 @@ extension LegacyProduct: StableIdentifiable {
 }
 ```
 
-For a new model, declare its `Identifiable.ID` type explicitly when Swift cannot
-infer it from `stableID` (for example, `typealias ID = UUID`). The reactive
-screen uses `stableID` as its diffable-data-source identity.
+`StableIdentifiable` refines `Identifiable`, so `id` and `stableID` have the
+same associated `ID` type (`Hashable & Sendable`). A new model can implement
+only `stableID`; declare `typealias ID` when Swift cannot infer the associated
+type:
+
+```swift
+struct SearchResult: StableIdentifiable, Sendable {
+    typealias ID = UUID
+    let stableID: ID
+    let title: String
+}
+```
+
+If a legacy model already conforms to `Identifiable`, its existing `ID` type
+must also be the type returned by `stableID`. A computed `stableID` is a
+convenient adapter when the legacy `id` uses the right type. If it uses a
+different type, add an adapter model or change the model's `Identifiable.ID`
+contract; an extension cannot give one conformance two different `ID` types.
+Reactive screens use `stableID` for item and section identities, even when a
+legacy model's `id` has a different value of the same type.
+
+Section and item identities occupy separate namespaces: section IDs must be
+unique among sections, while item IDs must be unique across all sections. A
+section ID and an item ID may have equal values, even when they use the same
+Swift type.
 
 `ControllerScreen` adapts an existing controller factory during incremental
 migration. `NavigationScreen`, `TabsScreen`, `PagesScreen`, and `SplitScreen`

@@ -100,12 +100,33 @@ state.sections.append(newSection)
 ```
 
 Use ``StableIdentifiable`` for items and ``ScreenSectionModel`` for typed
-sections. IDs must remain stable for the lifetime of an entity and unique in
-each snapshot. ``ScreenViewController/setItems(_:animated:completion:)`` and
+sections. IDs must remain stable for the lifetime of an entity. Section IDs
+must be unique among sections; item IDs must be unique across the whole screen.
+These are separate identity namespaces, so a section ID and item ID may have
+the same value and Swift type.
+``ScreenViewController/setItems(_:animated:completion:)`` and
 ``ScreenViewController/setSections(_:animated:completion:)`` remain available
 for stateless screens. New conforming models may need an explicit
 `typealias ID = UUID` (or another `Hashable & Sendable` ID type). Reactive
-screens use `stableID` for their diffable-data-source identity.
+screens use `stableID` for their diffable-data-source identity, even when a
+legacy model's `id` has a different value of the same type.
+
+``StableIdentifiable`` refines `Identifiable`; both properties therefore share
+one associated `ID` type. This new model can supply only `stableID`:
+
+```swift
+struct SearchResult: StableIdentifiable, Sendable {
+    typealias ID = UUID
+    let stableID: ID
+    let title: String
+}
+```
+
+An existing `Identifiable` model can add ``StableIdentifiable`` in an
+integration module when its existing `ID` type matches the type returned by
+`stableID`. If those types differ, use an adapter model or change the model's
+`Identifiable.ID` contract; an extension cannot declare a second associated
+`ID` type for the same conformance.
 
 ## Compose screens
 
