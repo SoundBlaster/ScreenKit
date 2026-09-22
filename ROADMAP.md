@@ -230,7 +230,7 @@ refresh after scrolling, not automatic observation through `ScreenState`.
 - [x] Compile a legacy adapter with the same `Identifiable.ID` type and verify
       that reactive snapshots still use `stableID` when its value differs from
       the model's existing `id`.
-- [ ] Add negative macro tests for malformed `#screen` argument shapes and
+- [x] Add negative macro tests for malformed `#screen` argument shapes and
       assert the diagnostic text and source location.
 - [x] Add duplicate-ID diagnostic tests and assert useful conflict context.
 - [x] Document which controller update methods are valid on reactive screens.
@@ -244,15 +244,14 @@ refresh after scrolling, not automatic observation through `ScreenState`.
 ### Previously completed release evidence
 
 Earlier iOS 18 simulator, DocC, symbol-scan, and consumer-CI results are recorded
-in their original PRs. This change reruns the package tests, iOS 18 simulator
-suite, and DocC build; a release still requires fresh evidence for every gate
-listed below.
+in their original PRs. This change reruns the package tests and iOS 18 simulator
+suite; a release still requires fresh evidence for every gate listed below.
 
-### Fresh verification for reactive identity coverage
+### Fresh package verification
 
-- iOS 18.6 simulator: 22 tests passed, 0 failures, 0 skips. Result bundle:
-  `/tmp/ScreenKit-PR10-reviewfix-20260923.xcresult`.
-- `swift test`: 4 macro tests passed, 0 failures.
+- iOS 18.6 simulator: 28 tests passed, 0 failures, 0 skips. Result bundle:
+  `/tmp/ScreenKit-NegativeMacros-Final-20260923.xcresult`.
+- `swift test`: 10 macro tests passed, 0 failures.
 - DocC generated for the iOS 18 target with the GitHub Actions command and the
   iOS 27 SDK; no warnings. Output:
   `/tmp/ScreenKit-Identity-DocC-Verified-20260923`.

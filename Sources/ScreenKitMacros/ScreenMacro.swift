@@ -16,7 +16,8 @@ public struct ScreenMacro: ExpressionMacro {
 
         let rendererExpression: ExprSyntax
         if let renderer = node.arguments.first(where: { $0.label?.text == "renderer" }),
-           node.arguments.count == 2 {
+           node.arguments.count == 2,
+           node.trailingClosure == nil {
             rendererExpression = renderer.expression
         } else if let trailingClosure = node.trailingClosure,
                   node.arguments.count == 1 {
