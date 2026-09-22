@@ -34,8 +34,22 @@ initializer explicitly, use `Screen(items, renderer: renderer)`.
 
 For automatic updates, make a feature-owned model conform to `ScreenState` and
 use `#screen(state)`. ScreenKit tracks the state values read while describing
-the screen and coalesces changes into one animated diff. Item and section models
-must provide stable IDs through `StableIdentifiable`.
+the screen and schedules animated snapshot updates on the main actor. Several
+mutations observed before a scheduled update may be applied together; this is
+not a transaction boundary. ID accessors report the applied snapshot and may
+briefly lag behind state. Item and section models must provide stable IDs through
+`StableIdentifiable`.
+
+The feature must retain state while it expects the screen to update. Controllers
+do not retain state. If state is released before the first read, the screen
+starts empty; if it is released after a snapshot is applied, the controller
+keeps that snapshot and receives no further state updates.
+
+`setSections` and `setItems` update stateless screens. Calls on state-backed
+screens are ignored and logged, and their completion closures are not called;
+change `state.sections` instead. `refreshContent`,
+`refreshSupplementaryContent`, and `invalidateLayout` remain available when an
+input is not observable.
 
 ```swift
 import Observation

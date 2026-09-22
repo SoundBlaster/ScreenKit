@@ -118,22 +118,22 @@ clear naming improvement that justifies a source-breaking rename.
 - The feature or its coordinator owns and retains a state value for as long as
   the screen is in use. Passing state to `Screen` does not transfer ownership
   to the controller.
-- If the weakly held state has been released, the current reader returns an
-  empty section list. This behavior is ambiguous and must not be presented as a
-  supported way to clear a screen. Before release, choose and document a
-  deliberate diagnostic policy for a missing state.
+- The feature must retain state while it expects the screen to update. If state
+  is released before the first read, the screen starts empty. If it is released
+  after a snapshot is applied, the controller keeps that snapshot and receives
+  no further updates. This preserves the last visible content without making
+  the controller an owner of feature state.
 - For a reactive screen, state is the sole authority for sections and items.
-  The public `setSections` and `setItems` methods currently allow an independent
-  snapshot to be applied; a later state observation replaces it. Before release,
-  prevent this conflicting update or define a deliberate state-backed API for
-  it. Keep `refreshContent`, `refreshSupplementaryContent`, and
-  `invalidateLayout` available for explicit refreshes of non-observed inputs.
+  Calls to the public `setSections` and `setItems` methods are ignored and logged;
+  their completion closures are not called. Mutate state to change structure.
+  Keep `refreshContent`, `refreshSupplementaryContent`, and `invalidateLayout`
+  available for explicit refreshes of non-observed inputs.
 - State observations schedule work asynchronously on the main actor and the
-  resulting snapshot currently animates. Document that ID accessors report the
-  controller's applied snapshot, which may briefly lag behind state. Do not
-  promise that arbitrary mutations always become exactly one diff; the current
-  coalescing boundary is the scheduled update, not a transaction over user code.
-  Decide whether reactive updates need an animation policy before exposing one.
+  resulting snapshot animates. ID accessors report the controller's applied
+  snapshot, which may briefly lag behind state. Mutations observed before a
+  scheduled update may be applied together; this is not a transaction over user
+  code. Keep this animation policy for now; a configurable policy can be
+  considered separately if a concrete use case appears.
 
 ### Identity and diagnostics
 
@@ -208,9 +208,12 @@ revision; they are not a report that the release gates were rerun.
       controller.
 - [ ] Verify duplicate section IDs and globally duplicate item IDs fail before
       snapshot application.
-- [ ] Verify an explicit `setSections`/`setItems` call on a reactive controller
-      follows the final documented authority rule.
-- [ ] Verify the chosen behavior when a reactive controller outlives its state.
+- [x] Verify that explicit structural updates are ignored on a reactive
+      controller and that later state mutations remain authoritative.
+- [x] Verify that the controller does not retain state and preserves its last
+      applied snapshot after state is released.
+- [x] Verify that a screen starts empty when state is released before its first
+      read.
 
 The ScreenKitLab header UI test uses the explicit `Screen(sections, renderer:)`
 initializer and calls `refreshSupplementaryContent`; it verifies explicit
@@ -229,9 +232,10 @@ refresh after scrolling, not automatic observation through `ScreenState`.
 - [ ] Add negative macro tests for malformed `#screen` argument shapes and
       assert the diagnostic text and source location.
 - [ ] Add duplicate-ID diagnostic tests and assert useful conflict context.
-- [ ] Document which controller update methods are valid on reactive screens.
-- [ ] Document state lifetime, snapshot-vs-state timing, identity namespaces,
-      and the same-type `Identifiable.ID` constraint in README and DocC.
+- [x] Document which controller update methods are valid on reactive screens.
+- [x] Document state lifetime and snapshot-vs-state timing in README and DocC.
+- [ ] Document identity namespaces and the same-type `Identifiable.ID`
+      constraint in README and DocC.
 - [x] Explain that iOS 27 is not required for reactive behavior.
 - [x] Keep README and DocC state examples executable: they start with a section
       or show the section being added.
@@ -260,13 +264,12 @@ requirement for iOS 27-only APIs in the reactive path.
 
 The next changes should be delivered in small, reviewable steps:
 
-1. Resolve reactive update authority, lost-state behavior, snapshot timing, and
-   animation policy; update public API documentation to match.
-2. Add focused tests for duplicate IDs, the `stableID`-only conformance,
-   reactive sections/items, iOS 18 layout observation, and reactive
+1. Add focused tests for duplicate IDs, the `stableID`-only conformance,
+   reactive removals/reorders/moves, iOS 18 layout observation, and reactive
    supplementary observation. Keep the existing explicit-refresh UI test
    labeled as such.
-3. Update README and DocC from the finalized contracts, then reconcile every
-   verification row against an executable test.
-4. Re-run the release-gate matrix and attach fresh evidence before publishing
+2. Document identity namespaces and the same-type `Identifiable.ID` constraint
+   in README and DocC, then reconcile every verification row against an
+   executable test.
+3. Re-run the release-gate matrix and attach fresh evidence before publishing
    the next package version.

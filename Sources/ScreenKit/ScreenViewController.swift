@@ -1,6 +1,9 @@
 #if canImport(UIKit)
 import Observation
+import OSLog
 import UIKit
+
+private let screenKitLogger = Logger(subsystem: "com.soundblaster.ScreenKit", category: "ScreenViewController")
 
 @MainActor
 private protocol StateUpdateScheduling: AnyObject {
@@ -22,7 +25,7 @@ private final class StateUpdateRelay: @unchecked Sendable {
 public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Identifiable>: UIViewController, StateUpdateScheduling where Item.ID: Sendable {
     public private(set) var collectionView: UICollectionView!
     private var initialSections: [ScreenSection<SectionID, Item>]?
-    private let stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>])?
+    private let stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>]?)?
     private let renderer: (Item) -> ScreenCellRenderer<Item>
     private let itemIDProvider: (Item) -> Item.ID
     private let titleProvider: () -> String
@@ -115,13 +118,18 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
             )
         }
         title = titleProvider()
-        let sections = stateReader != nil ? readObservedState() : (initialSections ?? [])
+        let sections: [ScreenSection<SectionID, Item>]
+        if stateReader != nil {
+            sections = readObservedState() ?? []
+        } else {
+            sections = initialSections ?? []
+        }
         initialSections = nil
-        setSections(sections, animated: false)
+        enqueueSections(sections, animated: false, completion: nil)
     }
 
-    private func readObservedState() -> [ScreenSection<SectionID, Item>] {
-        guard let stateReader else { return [] }
+    private func readObservedState() -> [ScreenSection<SectionID, Item>]? {
+        guard let stateReader else { return nil }
         let relay = stateUpdateRelay
         return withObservationTracking {
             _ = titleProvider()
@@ -137,7 +145,8 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         Task { @MainActor [weak self] in
             guard let self else { return }
             isStateUpdateScheduled = false
-            setSections(readObservedState(), animated: true)
+            guard let sections = readObservedState() else { return }
+            enqueueSections(sections, animated: true, completion: nil)
         }
     }
 
@@ -152,11 +161,17 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         if #unavailable(iOS 26.0) { title = titleProvider() }
     }
 
+    /// The item IDs in the controller's currently applied snapshot.
+    /// Reactive state changes are applied asynchronously, so this may briefly
+    /// lag behind the feature-owned state.
     public var itemIDs: [Item.ID] {
         loadViewIfNeeded()
         return dataSource.snapshot().itemIdentifiers
     }
 
+    /// The section IDs in the controller's currently applied snapshot.
+    /// Reactive state changes are applied asynchronously, so this may briefly
+    /// lag behind the feature-owned state.
     public var sectionIDs: [SectionID] {
         loadViewIfNeeded()
         return dataSource.snapshot().sectionIdentifiers
@@ -174,13 +189,29 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         return ids[index]
     }
 
+    /// Replaces sections on a screen created without `ScreenState`.
+    ///
     /// Requests are applied FIFO, including calls made during animations or completions.
     /// Item IDs must be globally unique across sections. Completion follows native apply
     /// and a collection layout pass. Releasing the controller abandons pending completions.
+    /// Calls on a state-backed screen are ignored and logged; mutate its state instead.
+    /// The completion is not called when a request is ignored.
     public func setSections(
         _ sections: [ScreenSection<SectionID, Item>],
         animated: Bool = true,
         completion: (@MainActor () -> Void)? = nil
+    ) {
+        guard stateReader == nil else {
+            screenKitLogger.error("Ignoring setSections on a state-backed ScreenViewController; mutate ScreenState.sections instead.")
+            return
+        }
+        enqueueSections(sections, animated: animated, completion: completion)
+    }
+
+    private func enqueueSections(
+        _ sections: [ScreenSection<SectionID, Item>],
+        animated: Bool,
+        completion: (@MainActor () -> Void)?
     ) {
         let sectionIDs = sections.map(\.id)
         precondition(Set(sectionIDs).count == sectionIDs.count, "Screen section IDs must be unique")
@@ -334,7 +365,9 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
 }
 
 extension ScreenViewController where SectionID == Int {
-    /// Replaces the entire screen with its single default section.
+    /// Replaces the entire stateless screen with its single default section.
+    /// Calls on a state-backed screen are ignored and logged; mutate its state instead.
+    /// The completion is not called when a request is ignored.
     public func setItems(
         _ items: [Item],
         animated: Bool = true,

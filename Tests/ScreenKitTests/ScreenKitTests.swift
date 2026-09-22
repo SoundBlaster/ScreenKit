@@ -39,6 +39,12 @@ final class ScreenKitTests: XCTestCase {
         var items: [StableItem]
     }
 
+    struct IntegerSection: ScreenSectionModel, Sendable {
+        typealias ID = Int
+        let stableID: Int
+        var items: [StableItem]
+    }
+
     @MainActor
     @Observable
     final class State: ScreenState {
@@ -46,6 +52,15 @@ final class ScreenKitTests: XCTestCase {
         var headerTitle = "One"
         var useAlternateRenderer = false
         init(sections: [Section]) {
+            self.sections = sections
+        }
+    }
+
+    @MainActor
+    @Observable
+    final class IntegerState: ScreenState {
+        var sections: [IntegerSection]
+        init(sections: [IntegerSection]) {
             self.sections = sections
         }
     }
@@ -100,6 +115,53 @@ final class ScreenKitTests: XCTestCase {
         }
         XCTAssertTrue(didUpdate)
         XCTAssertEqual(controller.sectionIDs, ["catalog"])
+    }
+
+    func testReactiveSetSectionsIsIgnoredAndStateRemainsAuthoritative() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "legacy-catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        let controller = #screen(state) { _ in
+            ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
+        }.makeViewController()
+        XCTAssertEqual(controller.sectionIDs, ["catalog"])
+
+        var completionCalled = false
+        controller.setSections(
+            [ScreenSection(id: "replacement", items: [])],
+            animated: false
+        ) {
+            completionCalled = true
+        }
+
+        XCTAssertEqual(controller.sectionIDs, ["catalog"])
+        XCTAssertFalse(completionCalled)
+
+        state.sections.append(Section(stableID: "recent", id: "recent", items: []))
+        let didUpdate = await waitUntil {
+            controller.sectionIDs == ["catalog", "recent"]
+        }
+        XCTAssertTrue(didUpdate)
+    }
+
+    func testReactiveSetItemsIsIgnoredAndStateRemainsAuthoritative() {
+        let state = IntegerState(sections: [
+            IntegerSection(stableID: 7, items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        let controller = #screen(state) { _ in
+            ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
+        }.makeViewController()
+        XCTAssertEqual(controller.sectionIDs, [7])
+        XCTAssertEqual(controller.itemIDs, [1])
+
+        var completionCalled = false
+        controller.setItems([StableItem(stableID: 99, id: 99, title: "Ignored")], animated: false) {
+            completionCalled = true
+        }
+
+        XCTAssertEqual(controller.sectionIDs, [7])
+        XCTAssertEqual(controller.itemIDs, [1])
+        XCTAssertFalse(completionCalled)
     }
 
     func testReactiveRendererFactoryReadsAreTracked() async {
@@ -231,22 +293,42 @@ final class ScreenKitTests: XCTestCase {
         XCTAssertEqual(header.renderedTitle, "Three")
     }
 
-    func testReactiveControllerDoesNotRetainState() {
+    func testReactiveControllerDoesNotRetainStateAndKeepsLastSnapshot() {
         weak var weakState: State?
         var controller: ScreenViewController<String, StableItem>?
         do {
             let state = State(sections: [
-                Section(stableID: "catalog", id: "catalog", items: [])
+                Section(stableID: "catalog", id: "legacy-catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
             ])
             weakState = state
             controller = #screen(state) { _ in
                 ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
             }.makeViewController()
-            _ = controller?.itemIDs
+            XCTAssertEqual(controller?.sectionIDs, ["catalog"])
         }
         XCTAssertNotNil(controller)
-        controller = nil
         XCTAssertNil(weakState)
+        XCTAssertEqual(controller?.sectionIDs, ["catalog"])
+        XCTAssertEqual(controller?.itemIDs, [1])
+    }
+
+    func testReactiveScreenStartsEmptyIfStateIsReleasedBeforeFirstRead() {
+        weak var weakState: State?
+        var screen: Screen<String, StableItem>!
+        do {
+            let state = State(sections: [
+                Section(stableID: "catalog", id: "legacy-catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+            ])
+            weakState = state
+            screen = #screen(state) { _ in
+                ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
+            }
+        }
+
+        XCTAssertNil(weakState)
+        let controller = screen.makeViewController()
+        XCTAssertEqual(controller.sectionIDs, [])
+        XCTAssertEqual(controller.itemIDs, [])
     }
 }
 #endif
