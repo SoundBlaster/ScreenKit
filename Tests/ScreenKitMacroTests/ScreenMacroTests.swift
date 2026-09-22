@@ -36,4 +36,12 @@ final class ScreenMacroTests: XCTestCase {
             macros: macros
         )
     }
+
+    func testForwardsStateAndRendererToScreenInitializer() {
+        assertMacroExpansion(
+            "#screen(state, renderer: renderer)",
+            expandedSource: "ScreenKit.Screen(state, renderer: renderer)",
+            macros: macros
+        )
+    }
 }
