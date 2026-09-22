@@ -1,7 +1,7 @@
 #if canImport(UIKit)
 import Observation
 import XCTest
-import ScreenKit
+@testable import ScreenKit
 
 @MainActor
 final class ScreenKitTests: XCTestCase {
@@ -201,7 +201,7 @@ final class ScreenKitTests: XCTestCase {
         XCTAssertEqual(factoryCalls, 2)
     }
 
-    func testReactiveSupplementaryRendererUpdatesContentAfterStateChanges() async {
+    func testSupplementaryRendererUpdatesOriginalViewContentAfterStateChanges() {
         let state = State(sections: [
             Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
         ])
@@ -213,43 +213,22 @@ final class ScreenKitTests: XCTestCase {
                 view.renderedTitle = state.headerTitle
             }
         )
-        let screen = #screen(state) { _ in
-            ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
-        }
-        .supplementary([supplementary])
-        let controller = screen.makeViewController()
-        _ = controller.sectionIDs
-
-        let first = controller.collectionView.dataSource?.collectionView?(
-            controller.collectionView,
-            viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader,
-            at: IndexPath(item: 0, section: 0)
+        let collection = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
+        let first = supplementary.view(
+            in: collection,
+            at: IndexPath(item: 0, section: 0),
+            sectionID: "catalog"
         ) as? ProbeHeader
-        XCTAssertEqual(first?.renderedTitle, "One")
+        XCTAssertTrue(first === header)
+        XCTAssertEqual(header.renderedTitle, "One")
 
         state.headerTitle = "Two"
-        controller.refreshSupplementaryContent()
-        let didUpdate = await waitUntil {
-            let updated = controller.collectionView.dataSource?.collectionView?(
-                controller.collectionView,
-                viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader,
-                at: IndexPath(item: 0, section: 0)
-            ) as? ProbeHeader
-            return updated?.renderedTitle == "Two"
-        }
-        XCTAssertTrue(didUpdate)
+        supplementary.update(header, sectionID: "catalog")
+        XCTAssertEqual(header.renderedTitle, "Two")
 
         state.headerTitle = "Three"
-        controller.refreshSupplementaryContent()
-        let didUpdateAgain = await waitUntil {
-            let updated = controller.collectionView.dataSource?.collectionView?(
-                controller.collectionView,
-                viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionHeader,
-                at: IndexPath(item: 0, section: 0)
-            ) as? ProbeHeader
-            return updated?.renderedTitle == "Three"
-        }
-        XCTAssertTrue(didUpdateAgain)
+        supplementary.update(header, sectionID: "catalog")
+        XCTAssertEqual(header.renderedTitle, "Three")
     }
 
     func testReactiveControllerDoesNotRetainState() {
