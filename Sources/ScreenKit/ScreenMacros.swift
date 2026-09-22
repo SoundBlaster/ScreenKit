@@ -10,6 +10,12 @@ public macro screen<Item: Identifiable where Item.ID: Sendable>(
 ) -> Screen<Int, Item> = #externalMacro(module: "ScreenKitMacros", type: "ScreenMacro")
 
 /// Creates a reactive screen backed by a feature-owned observable state.
+///
+/// The feature should retain `state` while it expects the screen to update.
+/// The internal state reader holds it weakly, though retained client closures
+/// and item values may hold it strongly. Mutate the state's sections to change
+/// screen structure; controller `setSections` and `setItems` calls are ignored
+/// for state-backed screens.
 @freestanding(expression)
 public macro screen<State: ScreenState>(
     _ state: State,

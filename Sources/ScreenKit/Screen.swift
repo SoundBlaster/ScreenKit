@@ -7,7 +7,7 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
     internal let sections: [ScreenSection<SectionID, Item>]
     internal let renderer: (Item) -> ScreenCellRenderer<Item>
     internal var itemIDProvider: ((Item) -> Item.ID)? = nil
-    internal var stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>])?
+    internal var stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>]?)?
     internal var titleProvider: () -> String = { "" }
     internal var sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     internal var supplementaryRenderers: [ScreenSupplementaryRenderer<SectionID>] = []
@@ -18,6 +18,11 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
     }
 
     /// Creates a reactive screen from a feature-owned observable state.
+    ///
+    /// The feature should retain the state while it expects the screen to update.
+    /// The internal state reader holds it weakly, although retained client
+    /// closures or item values may hold it strongly. If state is released after
+    /// a snapshot is applied, the screen keeps that snapshot.
     public init<State: ScreenState>(
         _ state: State,
         renderer: @escaping (State.Section.Item) -> ScreenCellRenderer<State.Section.Item>
@@ -25,7 +30,7 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
         self.init([], renderer: renderer)
         itemIDProvider = { $0.stableID }
         stateReader = { [weak state] in
-            guard let state else { return [] }
+            guard let state else { return nil }
             return state.sections.map { section in
                 ScreenSection(id: section.stableID, items: section.items)
             }

@@ -46,27 +46,40 @@ multiple sections, construct ``Screen`` with ``ScreenSection`` values.
 
 ## Update content
 
-A screen controller exposes explicit update methods. Item identifiers must be
-unique across the whole screen, and section identifiers must be unique.
+A screen controller exposes explicit update methods for stateless screens. Item
+identifiers must be unique across the whole screen, and section identifiers must
+be unique.
 
 ```swift
 controller.setItems(updatedProducts)
 controller.refreshContent()
 ```
 
-Use `setSections(_:animated:completion:)` for multiple sections. ScreenKit
-tracks observable reads made by reactive screens, including custom layout and
-supplementary renderers, on iOS 18 and later. ``ScreenViewController/invalidateLayout()``
-remains available for explicit legacy screens; iOS 27 can additionally provide
-native layout observation.
+Use `setSections(_:animated:completion:)` for multiple sections. On a screen
+created from `ScreenState`, calls to `setItems` or `setSections` are ignored and
+logged; their completion closures are not called. Mutate the feature-owned state
+instead. ScreenKit tracks observable reads made by reactive screens, including
+custom layout and supplementary renderers, on iOS 18 and later.
+``ScreenViewController/invalidateLayout()`` remains available when layout inputs
+are not observable; iOS 27 can additionally provide native layout observation.
 
 ## Make state changes reactive
 
 Feature-owned `@Observable` models can conform to ``ScreenState``. The
 `#screen(state)` entry point tracks the state values read by the screen and
-coalesces mutations into one animated diff. ScreenKit uses
-`Observation.withObservationTracking`, so no observation-specific Info.plist
-key is required.
+schedules animated snapshot updates on the main actor. Mutations observed before
+a scheduled update may be applied together; this is not a transaction boundary.
+`itemIDs` and `sectionIDs` report the currently applied snapshot and may briefly
+lag behind the state. ScreenKit uses `Observation.withObservationTracking`, so
+no observation-specific Info.plist key is required.
+
+The feature should retain the state while it expects the screen to update. The
+controller's internal state reader holds it weakly, but retained renderers,
+title, layout, or supplementary closures and item values can capture it
+strongly. If none of those retained values keeps state alive, releasing it
+before the first read makes the screen start empty; releasing it after a
+snapshot is applied leaves the controller showing that snapshot with no further
+state updates.
 
 ```swift
 import Observation
@@ -90,7 +103,7 @@ Use ``StableIdentifiable`` for items and ``ScreenSectionModel`` for typed
 sections. IDs must remain stable for the lifetime of an entity and unique in
 each snapshot. ``ScreenViewController/setItems(_:animated:completion:)`` and
 ``ScreenViewController/setSections(_:animated:completion:)`` remain available
-for explicit legacy updates. New conforming models may need an explicit
+for stateless screens. New conforming models may need an explicit
 `typealias ID = UUID` (or another `Hashable & Sendable` ID type). Reactive
 screens use `stableID` for their diffable-data-source identity.
 
