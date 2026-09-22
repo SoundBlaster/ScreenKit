@@ -197,9 +197,9 @@ revision; they are not a report that the release gates were rerun.
 
 ### Reactive behavior still needing direct tests
 
-- [ ] Add, remove, and reorder reactive sections; current state-backed coverage
-      proves adding an item, not the full section operation set.
-- [ ] Add, remove, reorder, and move reactive items between sections.
+- [x] Add a reactive section and an item through state mutations.
+- [ ] Remove and reorder reactive sections.
+- [ ] Remove, reorder, and move reactive items between sections.
 - [ ] Change an item's own content while preserving its `stableID` and verify
       the visible cell payload updates.
 - [ ] Verify state reads in the layout provider on the iOS 18 fallback path.
