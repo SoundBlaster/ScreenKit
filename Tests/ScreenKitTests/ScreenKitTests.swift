@@ -184,10 +184,14 @@ final class ScreenKitTests: XCTestCase {
         }
         XCTAssertTrue(moveWasApplied)
 
+        state.sections[0].items.removeAll { $0.stableID == 3 }
+        let standaloneRemoval = await waitUntil { controller.itemIDs(in: "recent") == [2] }
+        XCTAssertTrue(standaloneRemoval)
+
         state.sections.removeAll { $0.stableID == "catalog" }
         let removedSection = await waitUntil { controller.sectionIDs == ["recent"] }
         XCTAssertTrue(removedSection)
-        XCTAssertEqual(controller.itemIDs, [3, 2])
+        XCTAssertEqual(controller.itemIDs, [2])
     }
 
     func testReactiveSetSectionsIsIgnoredAndStateRemainsAuthoritative() async {
@@ -512,20 +516,38 @@ final class ScreenKitTests: XCTestCase {
         withExtendedLifetime(window) {}
     }
 
-    func testDuplicateIdentityDiagnosticsIncludeConflictingPositions() {
-        XCTAssertEqual(
-            ScreenIdentityValidator.duplicateSectionMessage(in: ["catalog", "recent", "catalog"]),
-            "Screen section IDs must be unique; duplicate at sections[0] and sections[2]."
+    func testDuplicateIDsAreReportedThroughControllerBeforeSnapshotEnqueue() {
+        var messages: [String] = []
+        let screen = Screen<String, Item>(
+            [ScreenSection(id: "kept", items: [Item(id: 1)])],
+            renderer: { _ in ScreenCellRenderer { _, _, _ in UICollectionViewCell() } }
         )
+        let controller = ScreenViewController(screen: screen) { messages.append($0) }
+        XCTAssertEqual(controller.sectionIDs, ["kept"])
+        XCTAssertEqual(controller.itemIDs, [1])
 
-        let sections = [
-            ScreenSection(id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")]),
-            ScreenSection(id: "recent", items: [StableItem(stableID: 1, id: 2, title: "Duplicate")])
-        ]
+        controller.setSections([
+            ScreenSection(id: "duplicate", items: []),
+            ScreenSection(id: "duplicate", items: [])
+        ], animated: false)
         XCTAssertEqual(
-            ScreenIdentityValidator.duplicateItemMessage(in: sections, id: \.stableID),
+            messages,
+            ["Screen section IDs must be unique; duplicate at sections[0] and sections[1]."]
+        )
+        XCTAssertEqual(controller.sectionIDs, ["kept"])
+        XCTAssertEqual(controller.itemIDs, [1])
+
+        controller.setSections([
+            ScreenSection(id: "first", items: [Item(id: 2)]),
+            ScreenSection(id: "second", items: [Item(id: 2)])
+        ], animated: false)
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(
+            messages.last,
             "Screen item IDs must be globally unique; duplicate at sections[0].items[0] and sections[1].items[0]."
         )
+        XCTAssertEqual(controller.sectionIDs, ["kept"])
+        XCTAssertEqual(controller.itemIDs, [1])
     }
 
     func testReactiveControllerDoesNotRetainStateAndKeepsLastSnapshot() {

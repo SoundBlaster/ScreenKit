@@ -207,7 +207,8 @@ revision; they are not a report that the release gates were rerun.
       updates to the same visible supplementary view through a reactive
       controller.
 - [x] Verify duplicate section IDs and globally duplicate item IDs are
-      diagnosed before snapshot enqueue, with conflict positions in the message.
+      diagnosed through `ScreenViewController` before snapshot enqueue, with
+      conflict positions in the message and the applied snapshot unchanged.
 - [x] Verify that explicit structural updates are ignored on a reactive
       controller and that later state mutations remain authoritative.
 - [x] Verify that the controller does not retain state and preserves its last
@@ -250,7 +251,7 @@ listed below.
 ### Fresh verification for reactive identity coverage
 
 - iOS 18.6 simulator: 22 tests passed, 0 failures, 0 skips. Result bundle:
-  `/tmp/ScreenKit-Identity-Verified-20260923.xcresult`.
+  `/tmp/ScreenKit-PR10-reviewfix-20260923.xcresult`.
 - `swift test`: 4 macro tests passed, 0 failures.
 - DocC generated for the iOS 18 target with the GitHub Actions command and the
   iOS 27 SDK; no warnings. Output:
