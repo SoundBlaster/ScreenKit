@@ -6,6 +6,9 @@ import UIKit
 public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: ScreenRepresentable where Item.ID: Sendable {
     internal let sections: [ScreenSection<SectionID, Item>]
     internal let renderer: (Item) -> ScreenCellRenderer<Item>
+    internal var itemIDProvider: ((Item) -> Item.ID)? = nil
+    internal var stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>])?
+    internal var stateOwner: AnyObject?
     internal var titleProvider: () -> String = { "" }
     internal var sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     internal var supplementaryRenderers: [ScreenSupplementaryRenderer<SectionID>] = []
@@ -15,14 +18,29 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
         self.renderer = renderer
     }
 
+    /// Creates a reactive screen from a feature-owned observable state.
+    public init<State: ScreenState>(
+        _ state: State,
+        renderer: @escaping (State.Section.Item) -> ScreenCellRenderer<State.Section.Item>
+    ) where SectionID == State.Section.ID, Item == State.Section.Item {
+        self.init([], renderer: renderer)
+        stateOwner = state
+        itemIDProvider = { $0.stableID }
+        stateReader = {
+            state.sections.map { section in
+                ScreenSection(id: section.stableID, items: section.items)
+            }
+        }
+    }
+
     public func title(_ value: @escaping () -> String) -> Self {
         var copy = self
         copy.titleProvider = value
         return copy
     }
 
-    /// Section IDs remain stable across reordering. Observable reads are tracked on iOS 27.
-    /// Earlier systems require invalidateLayout() after a layout model changes.
+    /// Section IDs remain stable across reordering. Reactive screens track
+    /// observable layout reads on iOS 18 and later.
     public func layout(_ provider: @escaping (SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection) -> Self {
         var copy = self
         copy.sectionProvider = provider

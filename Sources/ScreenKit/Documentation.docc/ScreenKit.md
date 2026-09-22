@@ -10,7 +10,7 @@ not require a base view-controller subclass.
 
 ## Start with a screen
 
-Use ``screen(_:renderer:)`` for a single-section list. The macro forwards to
+Use ``screen(_:renderer:)->Screen<Int,Item>`` for a single-section list. The macro forwards to
 `Screen(items, renderer:)`; it does not create state or change the renderer
 lifecycle.
 
@@ -54,9 +54,45 @@ controller.setItems(updatedProducts)
 controller.refreshContent()
 ```
 
-Use `setSections(_:animated:completion:)` for multiple sections. If the model
-behind a custom layout changes on iOS 18–26, call ``ScreenViewController/invalidateLayout()``;
-iOS 27 can track observable reads made by the layout provider.
+Use `setSections(_:animated:completion:)` for multiple sections. ScreenKit
+tracks observable reads made by reactive screens, including custom layout and
+supplementary renderers, on iOS 18 and later. ``ScreenViewController/invalidateLayout()``
+remains available for explicit legacy screens; iOS 27 can additionally provide
+native layout observation.
+
+## Make state changes reactive
+
+Feature-owned `@Observable` models can conform to ``ScreenState``. The
+`#screen(state)` entry point tracks the state values read by the screen and
+coalesces mutations into one animated diff. ScreenKit uses
+`Observation.withObservationTracking`, so no observation-specific Info.plist
+key is required.
+
+```swift
+import Observation
+
+@MainActor
+@Observable
+final class ProductsState: ScreenState {
+    var sections: [ProductsSection] = []
+}
+
+let state = ProductsState()
+let screen = #screen(state) { product in
+    productRenderer
+}
+let controller = screen.makeViewController()
+
+state.sections.append(newSection)
+```
+
+Use ``StableIdentifiable`` for items and ``ScreenSectionModel`` for typed
+sections. IDs must remain stable for the lifetime of an entity and unique in
+each snapshot. ``ScreenViewController/setItems(_:animated:completion:)`` and
+``ScreenViewController/setSections(_:animated:completion:)`` remain available
+for explicit legacy updates. New conforming models may need an explicit
+`typealias ID = UUID` (or another `Hashable & Sendable` ID type). Reactive
+screens use `stableID` for their diffable-data-source identity.
 
 ## Compose screens
 
@@ -74,7 +110,10 @@ when a collection needs to hold different screen types.
 ### Define and render screens
 
 - ``Screen``
-- ``screen(_:renderer:)``
+- ``ScreenState``
+- ``StableIdentifiable``
+- ``ScreenSectionModel``
+- ``screen(_:renderer:)->Screen<Int,Item>``
 - ``ScreenSection``
 - ``ScreenCellRenderer``
 - ``ScreenSupplementaryRenderer``

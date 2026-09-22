@@ -1,12 +1,32 @@
 #if canImport(UIKit)
+import Observation
 import UIKit
+
+@MainActor
+private protocol StateUpdateScheduling: AnyObject {
+    func scheduleStateUpdate()
+}
+
+private final class StateUpdateRelay: @unchecked Sendable {
+    weak var controller: (any StateUpdateScheduling)?
+
+    func signal() {
+        Task { @MainActor [weak self] in
+            self?.controller?.scheduleStateUpdate()
+        }
+    }
+}
 
 /// Owns exactly one collection, data source, and snapshot lifecycle.
 @MainActor
-public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Identifiable>: UIViewController where Item.ID: Sendable {
+public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Identifiable>: UIViewController, StateUpdateScheduling where Item.ID: Sendable {
     public private(set) var collectionView: UICollectionView!
     private var initialSections: [ScreenSection<SectionID, Item>]?
+    private let stateReader: (@MainActor () -> [ScreenSection<SectionID, Item>])?
+    // Retain the feature-owned state for as long as this screen exists.
+    private let stateOwner: AnyObject?
     private let renderer: (Item) -> ScreenCellRenderer<Item>
+    private let itemIDProvider: (Item) -> Item.ID
     private let titleProvider: () -> String
     private let sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     private let supplementaryRenderers: [String: ScreenSupplementaryRenderer<SectionID>]
@@ -28,14 +48,21 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private var pendingUpdates: [Request] = []
     private var isApplyingUpdate = false
     private var isDrainingUpdates = false
+    private var isStateUpdateScheduled = false
+    private let stateUpdateRelay: StateUpdateRelay?
 
     internal init(screen: Screen<SectionID, Item>) {
         initialSections = screen.sections
+        stateReader = screen.stateReader
+        stateOwner = screen.stateOwner
+        stateUpdateRelay = screen.stateReader == nil ? nil : StateUpdateRelay()
         renderer = screen.renderer
+        itemIDProvider = screen.itemIDProvider ?? { $0.id }
         titleProvider = screen.titleProvider
         sectionProvider = screen.sectionProvider
         supplementaryRenderers = Dictionary(uniqueKeysWithValues: screen.supplementaryRenderers.map { ($0.elementKind, $0) })
         super.init(nibName: nil, bundle: nil)
+        stateUpdateRelay?.controller = self
     }
 
     @available(*, unavailable)
@@ -46,8 +73,15 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         view.backgroundColor = .systemBackground
         let layout = UICollectionViewCompositionalLayout { [weak self] index, environment in
             guard let self, let id = sectionID(at: index) else { return nil }
-            return sectionProvider?(id, environment)
-                ?? .list(using: .init(appearance: .insetGrouped), layoutEnvironment: environment)
+            let makeLayout = {
+                self.sectionProvider?(id, environment)
+                    ?? .list(using: .init(appearance: .insetGrouped), layoutEnvironment: environment)
+            }
+            guard stateReader != nil else { return makeLayout() }
+            let relay = stateUpdateRelay
+            return withObservationTracking(makeLayout) {
+                relay?.signal()
+            }
         }
         collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         collectionView.accessibilityIdentifier = "screen.collection"
@@ -64,16 +98,50 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         ])
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collection, indexPath, id in
             guard let self, let item = itemsByID[id], let renderer = renderersByID[id] else { return nil }
-            return renderer.cell(in: collection, at: indexPath, item: item)
+            guard stateReader != nil else {
+                return renderer.cell(in: collection, at: indexPath, item: item)
+            }
+            let relay = stateUpdateRelay
+            return withObservationTracking {
+                renderer.cell(in: collection, at: indexPath, item: item)
+            } onChange: {
+                relay?.signal()
+            }
         }
         dataSource.supplementaryViewProvider = { [weak self] collection, kind, indexPath in
             guard let self, let id = sectionID(at: indexPath.section) else { return nil }
-            return supplementaryRenderers[kind]?.view(in: collection, at: indexPath, sectionID: id)
+            return makeSupplementaryView(
+                in: collection,
+                kind: kind,
+                at: indexPath,
+                sectionID: id
+            )
         }
         title = titleProvider()
-        let sections = initialSections ?? []
+        let sections = stateReader != nil ? readObservedState() : (initialSections ?? [])
         initialSections = nil
         setSections(sections, animated: false)
+    }
+
+    private func readObservedState() -> [ScreenSection<SectionID, Item>] {
+        guard let stateReader else { return [] }
+        let relay = stateUpdateRelay
+        return withObservationTracking {
+            _ = titleProvider()
+            return stateReader()
+        } onChange: {
+            relay?.signal()
+        }
+    }
+
+    fileprivate func scheduleStateUpdate() {
+        guard stateReader != nil, !isStateUpdateScheduled else { return }
+        isStateUpdateScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            isStateUpdateScheduled = false
+            setSections(readObservedState(), animated: true)
+        }
     }
 
     @available(iOS 26.0, *)
@@ -119,7 +187,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     ) {
         let sectionIDs = sections.map(\.id)
         precondition(Set(sectionIDs).count == sectionIDs.count, "Screen section IDs must be unique")
-        let ids = sections.flatMap { $0.items.map(\.id) }
+        let ids = sections.flatMap { $0.items.map(itemIDProvider) }
         precondition(Set(ids).count == ids.count, "Screen item IDs must be globally unique")
         enqueue(.sections(sections, animated: animated), completion: completion)
     }
@@ -175,10 +243,21 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         completion: @escaping @MainActor () -> Void
     ) {
         let items = sections.flatMap(\.items)
-        let ids = items.map(\.id)
+        let ids = items.map(itemIDProvider)
         let previous = renderersByID
-        let nextItems = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        let nextRenderers = Dictionary(uniqueKeysWithValues: items.map { ($0.id, renderer($0)) })
+        let nextItems = Dictionary(uniqueKeysWithValues: items.map { (self.itemIDProvider($0), $0) })
+        let makeRenderers = {
+            Dictionary(uniqueKeysWithValues: items.map { (self.itemIDProvider($0), self.renderer($0)) })
+        }
+        let nextRenderers: [Item.ID: ScreenCellRenderer<Item>]
+        if stateReader != nil {
+            let relay = stateUpdateRelay
+            nextRenderers = withObservationTracking(makeRenderers) {
+                relay?.signal()
+            }
+        } else {
+            nextRenderers = makeRenderers()
+        }
         // Outgoing cells may still be requested during an animated transition.
         // Keep their payloads/renderers until UIKit completes this snapshot.
         itemsByID.merge(nextItems) { _, new in new }
@@ -186,7 +265,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         var snapshot = NSDiffableDataSourceSnapshot<SectionID, Item.ID>()
         for section in sections {
             snapshot.appendSections([section.id])
-            snapshot.appendItems(section.items.map(\.id), toSection: section.id)
+            snapshot.appendItems(section.items.map(itemIDProvider), toSection: section.id)
         }
         let retained = ids.filter { previous[$0] != nil }
         let replaced = retained.filter { previous[$0]?.identity != nextRenderers[$0]?.identity }
@@ -197,8 +276,27 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
             guard let self else { return }
             itemsByID = nextItems
             renderersByID = nextRenderers
+            title = titleProvider()
             updateVisibleSupplementaries()
             completion()
+        }
+    }
+
+    private func makeSupplementaryView(
+        in collection: UICollectionView,
+        kind: String,
+        at indexPath: IndexPath,
+        sectionID: SectionID
+    ) -> UICollectionReusableView? {
+        guard let renderer = supplementaryRenderers[kind] else { return nil }
+        guard stateReader != nil else {
+            return renderer.view(in: collection, at: indexPath, sectionID: sectionID)
+        }
+        let relay = stateUpdateRelay
+        return withObservationTracking {
+            renderer.view(in: collection, at: indexPath, sectionID: sectionID)
+        } onChange: {
+            relay?.signal()
         }
     }
 
@@ -207,7 +305,16 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
             for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(ofKind: kind) {
                 guard let id = sectionID(at: indexPath.section),
                       let view = collectionView.supplementaryView(forElementKind: kind, at: indexPath) else { continue }
-                renderer.update(view, sectionID: id)
+                if stateReader != nil {
+                    let relay = stateUpdateRelay
+                    withObservationTracking {
+                        renderer.update(view, sectionID: id)
+                    } onChange: {
+                        relay?.signal()
+                    }
+                } else {
+                    renderer.update(view, sectionID: id)
+                }
                 view.setNeedsLayout()
             }
         }

@@ -32,7 +32,7 @@ public struct ScreenMacro: ExpressionMacro {
 }
 
 private struct InvalidScreenMacroArguments: DiagnosticMessage {
-    var message: String { "#screen requires an item array and a renderer argument." }
+    var message: String { "#screen requires an items/state expression and a renderer argument." }
     var diagnosticID: MessageID { MessageID(domain: "ScreenKitMacros", id: "invalid-arguments") }
     var severity: DiagnosticSeverity { .error }
 }

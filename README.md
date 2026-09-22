@@ -32,6 +32,41 @@ or multiple sections are needed. The macro does not own screen state; applicatio
 features continue to own their models and updates. To write the single-section
 initializer explicitly, use `Screen(items, renderer: renderer)`.
 
+For automatic updates, make a feature-owned model conform to `ScreenState` and
+use `#screen(state)`. ScreenKit tracks the state values read while describing
+the screen and coalesces changes into one animated diff. Item and section models
+must provide stable IDs through `StableIdentifiable`.
+
+```swift
+import Observation
+
+@MainActor
+@Observable
+final class ProductsState: ScreenState {
+    var sections: [ProductsSection] = []
+}
+
+let state = ProductsState()
+let screen = #screen(state) { product in
+    productRenderer
+}
+let controller = screen.makeViewController()
+
+state.sections.append(newSection) // the screen updates automatically
+```
+
+Existing models can adopt the identity contract in an integration module:
+
+```swift
+extension LegacyProduct: StableIdentifiable {
+    var stableID: UUID { legacyID }
+}
+```
+
+For a new model, declare its `Identifiable.ID` type explicitly when Swift cannot
+infer it from `stableID` (for example, `typealias ID = UUID`). The reactive
+screen uses `stableID` as its diffable-data-source identity.
+
 `ControllerScreen` adapts an existing controller factory during incremental
 migration. `NavigationScreen`, `TabsScreen`, `PagesScreen`, and `SplitScreen`
 compose screens without introducing a base controller type.
