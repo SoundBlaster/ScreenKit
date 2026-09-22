@@ -23,6 +23,20 @@ final class ScreenKitTests: XCTestCase {
         return predicate()
     }
 
+    private func show(_ controller: UIViewController) -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+        controller.loadViewIfNeeded()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.frame = window.bounds
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        if let controller = controller as? ScreenViewController<String, StableItem> {
+            controller.collectionView.layoutIfNeeded()
+        }
+        return window
+    }
+
     struct Item: Identifiable, Sendable {
         let id: Int
     }
@@ -31,6 +45,11 @@ final class ScreenKitTests: XCTestCase {
         let stableID: Int
         let id: Int
         var title: String
+    }
+
+    struct StableOnlyItem: StableIdentifiable, Sendable {
+        typealias ID = UUID
+        let stableID: ID
     }
 
     struct Section: ScreenSectionModel, Sendable {
@@ -45,12 +64,19 @@ final class ScreenKitTests: XCTestCase {
         var items: [StableItem]
     }
 
+    struct StableOnlySection: ScreenSectionModel, Sendable {
+        typealias ID = UUID
+        let stableID: ID
+        var items: [StableOnlyItem]
+    }
+
     @MainActor
     @Observable
     final class State: ScreenState {
         var sections: [Section]
         var headerTitle = "One"
         var useAlternateRenderer = false
+        var layoutColumns = 1
         init(sections: [Section]) {
             self.sections = sections
         }
@@ -115,6 +141,57 @@ final class ScreenKitTests: XCTestCase {
         }
         XCTAssertTrue(didUpdate)
         XCTAssertEqual(controller.sectionIDs, ["catalog"])
+    }
+
+    func testStableIdentifiableCanDefineOnlyStableIDAndExplicitIDType() {
+        let itemID = UUID()
+        let sectionID = UUID()
+        let item = StableOnlyItem(stableID: itemID)
+        let section = StableOnlySection(stableID: sectionID, items: [item])
+
+        XCTAssertEqual(item.id, itemID)
+        XCTAssertEqual(section.id, sectionID)
+    }
+
+    func testReactiveSectionsAndItemsCanBeReorderedRemovedAndMoved() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "legacy-catalog", items: [
+                StableItem(stableID: 1, id: 101, title: "One"),
+                StableItem(stableID: 2, id: 102, title: "Two")
+            ]),
+            Section(stableID: "recent", id: "legacy-recent", items: [
+                StableItem(stableID: 3, id: 103, title: "Three")
+            ])
+        ])
+        let controller = #screen(state) { _ in
+            ScreenCellRenderer { _, _, _ in UICollectionViewCell() }
+        }.makeViewController()
+        _ = controller.itemIDs
+
+        state.sections.reverse()
+        let reorderedSections = await waitUntil { controller.sectionIDs == ["recent", "catalog"] }
+        XCTAssertTrue(reorderedSections)
+
+        state.sections[1].items.reverse()
+        let reorderedItems = await waitUntil { controller.itemIDs(in: "catalog") == [2, 1] }
+        XCTAssertTrue(reorderedItems)
+
+        let movedItem = state.sections[1].items.removeFirst()
+        state.sections[0].items.append(movedItem)
+        let moveWasApplied = await waitUntil {
+            controller.itemIDs(in: "recent") == [3, 2]
+                && controller.itemIDs(in: "catalog") == [1]
+        }
+        XCTAssertTrue(moveWasApplied)
+
+        state.sections[0].items.removeAll { $0.stableID == 3 }
+        let standaloneRemoval = await waitUntil { controller.itemIDs(in: "recent") == [2] }
+        XCTAssertTrue(standaloneRemoval)
+
+        state.sections.removeAll { $0.stableID == "catalog" }
+        let removedSection = await waitUntil { controller.sectionIDs == ["recent"] }
+        XCTAssertTrue(removedSection)
+        XCTAssertEqual(controller.itemIDs, [2])
     }
 
     func testReactiveSetSectionsIsIgnoredAndStateRemainsAuthoritative() async {
@@ -221,6 +298,79 @@ final class ScreenKitTests: XCTestCase {
         XCTAssertTrue(didUpdate)
     }
 
+    func testReactiveItemContentChangeUpdatesVisibleCellWithStableIdentity() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 9001, title: "One")])
+        ])
+        let registration = UICollectionView.CellRegistration<ProbeCell, StableItem> { cell, _, item in
+            cell.renderedTitle = item.title
+        }
+        let screen = #screen(state) { _ in
+            ScreenCellRenderer { collection, indexPath, item in
+                collection.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: item)
+            }
+        }
+        let controller = screen.makeViewController()
+        let window = show(controller)
+        let collection = controller.collectionView!
+        let indexPath = IndexPath(item: 0, section: 0)
+        let cellAppeared = await waitUntil { collection.cellForItem(at: indexPath) is ProbeCell }
+        XCTAssertTrue(cellAppeared)
+        let visibleCell = collection.cellForItem(at: indexPath) as? ProbeCell
+        XCTAssertEqual(visibleCell?.renderedTitle, "One")
+
+        var updatedSection = state.sections[0]
+        updatedSection.items[0].title = "Updated"
+        state.sections = [updatedSection]
+        let cellUpdated = await waitUntil {
+            (collection.cellForItem(at: indexPath) as? ProbeCell)?.renderedTitle == "Updated"
+        }
+        XCTAssertTrue(cellUpdated)
+        XCTAssertEqual(controller.itemIDs, [1])
+        withExtendedLifetime(window) {}
+    }
+
+    func testReactiveLayoutProviderTracksStateOnIOS18Fallback() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        var observedColumnCounts: [Int] = []
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewCell, StableItem> { _, _, _ in }
+        let screen = #screen(state) { _ in
+            ScreenCellRenderer { collection, indexPath, item in
+                collection.dequeueConfiguredReusableCell(
+                    using: cellRegistration,
+                    for: indexPath,
+                    item: item
+                )
+            }
+        }
+        .layout { _, _ in
+            let columns = state.layoutColumns
+            observedColumnCounts.append(columns)
+            let itemSize = NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1 / CGFloat(columns)),
+                heightDimension: .absolute(44)
+            )
+            let item = NSCollectionLayoutItem(layoutSize: itemSize)
+            let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(44))
+            let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitem: item, count: columns)
+            return NSCollectionLayoutSection(group: group)
+        }
+        let controller = screen.makeViewController()
+        let window = show(controller)
+        let initialLayoutObserved = await waitUntil { observedColumnCounts.contains(1) }
+        XCTAssertTrue(initialLayoutObserved)
+        let previousCount = observedColumnCounts.count
+
+        state.layoutColumns = 2
+        let updatedLayoutObserved = await waitUntil {
+            observedColumnCounts.count > previousCount && observedColumnCounts.last == 2
+        }
+        XCTAssertTrue(updatedLayoutObserved)
+        withExtendedLifetime(window) {}
+    }
+
     func testReactiveControllersObserveSharedStateIndependently() async {
         let state = State(sections: [
             Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
@@ -291,6 +441,113 @@ final class ScreenKitTests: XCTestCase {
         state.headerTitle = "Three"
         supplementary.update(header, sectionID: "catalog")
         XCTAssertEqual(header.renderedTitle, "Three")
+    }
+
+    func testReactiveSupplementaryCreationAndRepeatedUpdatesUseSameVisibleView() async {
+        let state = State(sections: [
+            Section(stableID: "catalog", id: "catalog", items: [StableItem(stableID: 1, id: 1, title: "One")])
+        ])
+        let headerKind = UICollectionView.elementKindSectionHeader
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewCell, StableItem> { _, _, _ in }
+        let renderer = ScreenSupplementaryRenderer<String>(
+            elementKind: headerKind,
+            make: { collection, indexPath in
+                let view = collection.dequeueReusableSupplementaryView(
+                    ofKind: headerKind,
+                    withReuseIdentifier: "ProbeHeader",
+                    for: indexPath
+                ) as! ProbeHeader
+                view.renderedTitle = state.headerTitle
+                return view
+            },
+            update: { (view: ProbeHeader, _) in view.renderedTitle = state.headerTitle }
+        )
+        let screen = #screen(state) { _ in
+            ScreenCellRenderer { collection, indexPath, item in
+                collection.dequeueConfiguredReusableCell(
+                    using: cellRegistration,
+                    for: indexPath,
+                    item: item
+                )
+            }
+        }
+        .layout { _, _ in
+            let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(44))
+            let item = NSCollectionLayoutItem(layoutSize: itemSize)
+            let group = NSCollectionLayoutGroup.vertical(
+                layoutSize: itemSize,
+                subitems: [item]
+            )
+            let section = NSCollectionLayoutSection(group: group)
+            section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
+                layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(40)),
+                elementKind: headerKind,
+                alignment: .top
+            )]
+            return section
+        }
+        .supplementary([renderer])
+        let controller = screen.makeViewController()
+        controller.loadViewIfNeeded()
+        controller.collectionView.register(
+            ProbeHeader.self,
+            forSupplementaryViewOfKind: headerKind,
+            withReuseIdentifier: "ProbeHeader"
+        )
+        let window = show(controller)
+        let collection = controller.collectionView!
+        let indexPath = IndexPath(item: 0, section: 0)
+        let created = await waitUntil {
+            collection.supplementaryView(forElementKind: headerKind, at: indexPath) is ProbeHeader
+        }
+        XCTAssertTrue(created)
+        let header = collection.supplementaryView(forElementKind: headerKind, at: indexPath) as? ProbeHeader
+        XCTAssertEqual(header?.renderedTitle, "One")
+
+        state.headerTitle = "Two"
+        let firstUpdateObserved = await waitUntil { header?.renderedTitle == "Two" }
+        XCTAssertTrue(firstUpdateObserved)
+        XCTAssertTrue(collection.supplementaryView(forElementKind: headerKind, at: indexPath) === header)
+
+        state.headerTitle = "Three"
+        let secondUpdateObserved = await waitUntil { header?.renderedTitle == "Three" }
+        XCTAssertTrue(secondUpdateObserved)
+        XCTAssertTrue(collection.supplementaryView(forElementKind: headerKind, at: indexPath) === header)
+        withExtendedLifetime(window) {}
+    }
+
+    func testDuplicateIDsAreReportedThroughControllerBeforeSnapshotEnqueue() {
+        var messages: [String] = []
+        let screen = Screen<String, Item>(
+            [ScreenSection(id: "kept", items: [Item(id: 1)])],
+            renderer: { _ in ScreenCellRenderer { _, _, _ in UICollectionViewCell() } }
+        )
+        let controller = ScreenViewController(screen: screen) { messages.append($0) }
+        XCTAssertEqual(controller.sectionIDs, ["kept"])
+        XCTAssertEqual(controller.itemIDs, [1])
+
+        controller.setSections([
+            ScreenSection(id: "duplicate", items: []),
+            ScreenSection(id: "duplicate", items: [])
+        ], animated: false)
+        XCTAssertEqual(
+            messages,
+            ["Screen section IDs must be unique; duplicate at sections[0] and sections[1]."]
+        )
+        XCTAssertEqual(controller.sectionIDs, ["kept"])
+        XCTAssertEqual(controller.itemIDs, [1])
+
+        controller.setSections([
+            ScreenSection(id: "first", items: [Item(id: 2)]),
+            ScreenSection(id: "second", items: [Item(id: 2)])
+        ], animated: false)
+        XCTAssertEqual(messages.count, 2)
+        XCTAssertEqual(
+            messages.last,
+            "Screen item IDs must be globally unique; duplicate at sections[0].items[0] and sections[1].items[0]."
+        )
+        XCTAssertEqual(controller.sectionIDs, ["kept"])
+        XCTAssertEqual(controller.itemIDs, [1])
     }
 
     func testReactiveControllerDoesNotRetainStateAndKeepsLastSnapshot() {

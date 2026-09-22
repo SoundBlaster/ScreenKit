@@ -31,6 +31,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private let titleProvider: () -> String
     private let sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     private let supplementaryRenderers: [String: ScreenSupplementaryRenderer<SectionID>]
+    private let identityFailureHandler: (@MainActor (String) -> Void)?
     private var dataSource: UICollectionViewDiffableDataSource<SectionID, Item.ID>!
     private var itemsByID: [Item.ID: Item] = [:]
     private var renderersByID: [Item.ID: ScreenCellRenderer<Item>] = [:]
@@ -52,7 +53,11 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private var isStateUpdateScheduled = false
     private let stateUpdateRelay: StateUpdateRelay?
 
-    internal init(screen: Screen<SectionID, Item>) {
+    // Tests can observe invalid requests without terminating the XCTest process.
+    internal init(
+        screen: Screen<SectionID, Item>,
+        identityFailureHandler: (@MainActor (String) -> Void)? = nil
+    ) {
         initialSections = screen.sections
         stateReader = screen.stateReader
         stateUpdateRelay = screen.stateReader == nil ? nil : StateUpdateRelay()
@@ -61,6 +66,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         titleProvider = screen.titleProvider
         sectionProvider = screen.sectionProvider
         supplementaryRenderers = Dictionary(uniqueKeysWithValues: screen.supplementaryRenderers.map { ($0.elementKind, $0) })
+        self.identityFailureHandler = identityFailureHandler
         super.init(nibName: nil, bundle: nil)
         stateUpdateRelay?.controller = self
     }
@@ -214,10 +220,20 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         completion: (@MainActor () -> Void)?
     ) {
         let sectionIDs = sections.map(\.id)
-        precondition(Set(sectionIDs).count == sectionIDs.count, "Screen section IDs must be unique")
-        let ids = sections.flatMap { $0.items.map(itemIDProvider) }
-        precondition(Set(ids).count == ids.count, "Screen item IDs must be globally unique")
+        if let message = ScreenIdentityValidator.duplicateSectionMessage(in: sectionIDs) {
+            failIdentityValidation(message)
+            return
+        }
+        if let message = ScreenIdentityValidator.duplicateItemMessage(in: sections, id: itemIDProvider) {
+            failIdentityValidation(message)
+            return
+        }
         enqueue(.sections(sections, animated: animated), completion: completion)
+    }
+
+    private func failIdentityValidation(_ message: String) {
+        guard let identityFailureHandler else { preconditionFailure(message) }
+        identityFailureHandler(message)
     }
 
     /// Explicit refresh for items, title, and managed visible headers/footers.

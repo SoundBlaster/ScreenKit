@@ -198,16 +198,17 @@ revision; they are not a report that the release gates were rerun.
 ### Reactive behavior still needing direct tests
 
 - [x] Add a reactive section and an item through state mutations.
-- [ ] Remove and reorder reactive sections.
-- [ ] Remove, reorder, and move reactive items between sections.
-- [ ] Change an item's own content while preserving its `stableID` and verify
+- [x] Remove and reorder reactive sections.
+- [x] Remove, reorder, and move reactive items between sections.
+- [x] Change an item's own content while preserving its `stableID` and verify
       the visible cell payload updates.
-- [ ] Verify state reads in the layout provider on the iOS 18 fallback path.
-- [ ] Verify observation during supplementary-view creation and repeated
+- [x] Verify state reads in the layout provider on the iOS 18 fallback path.
+- [x] Verify observation during supplementary-view creation and repeated
       updates to the same visible supplementary view through a reactive
       controller.
-- [ ] Verify duplicate section IDs and globally duplicate item IDs fail before
-      snapshot application.
+- [x] Verify duplicate section IDs and globally duplicate item IDs are
+      diagnosed through `ScreenViewController` before snapshot enqueue, with
+      conflict positions in the message and the applied snapshot unchanged.
 - [x] Verify that explicit structural updates are ignored on a reactive
       controller and that later state mutations remain authoritative.
 - [x] Verify that the controller does not retain state and preserves its last
@@ -224,17 +225,17 @@ refresh after scrolling, not automatic observation through `ScreenState`.
 - [x] Explicit APIs expose caller-provided section and item IDs.
 - [x] The package regression test verifies a state-backed model whose legacy
       `id` value differs from `stableID`.
-- [ ] Compile a new `StableIdentifiable` model that defines only `stableID`
+- [x] Compile a new `StableIdentifiable` model that defines only `stableID`
       plus an explicit `typealias ID`.
-- [ ] Compile a legacy adapter with the same `Identifiable.ID` type and verify
+- [x] Compile a legacy adapter with the same `Identifiable.ID` type and verify
       that reactive snapshots still use `stableID` when its value differs from
       the model's existing `id`.
 - [ ] Add negative macro tests for malformed `#screen` argument shapes and
       assert the diagnostic text and source location.
-- [ ] Add duplicate-ID diagnostic tests and assert useful conflict context.
+- [x] Add duplicate-ID diagnostic tests and assert useful conflict context.
 - [x] Document which controller update methods are valid on reactive screens.
 - [x] Document state lifetime and snapshot-vs-state timing in README and DocC.
-- [ ] Document identity namespaces and the same-type `Identifiable.ID`
+- [x] Document identity namespaces and the same-type `Identifiable.ID`
       constraint in README and DocC.
 - [x] Explain that iOS 27 is not required for reactive behavior.
 - [x] Keep README and DocC state examples executable: they start with a section
@@ -242,9 +243,20 @@ refresh after scrolling, not automatic observation through `ScreenState`.
 
 ### Previously completed release evidence
 
-The prior iOS 18 simulator test, DocC build, symbol scan, and consumer CI results
-are recorded in their original PRs. Fresh results are required for a release;
-the API audit did not rerun these gates.
+Earlier iOS 18 simulator, DocC, symbol-scan, and consumer-CI results are recorded
+in their original PRs. This change reruns the package tests, iOS 18 simulator
+suite, and DocC build; a release still requires fresh evidence for every gate
+listed below.
+
+### Fresh verification for reactive identity coverage
+
+- iOS 18.6 simulator: 22 tests passed, 0 failures, 0 skips. Result bundle:
+  `/tmp/ScreenKit-PR10-reviewfix-20260923.xcresult`.
+- `swift test`: 4 macro tests passed, 0 failures.
+- DocC generated for the iOS 18 target with the GitHub Actions command and the
+  iOS 27 SDK; no warnings. Output:
+  `/tmp/ScreenKit-Identity-DocC-Verified-20260923`.
+- `git diff --check` passed.
 
 ### Release gates
 
