@@ -298,8 +298,22 @@ requirement for iOS 27-only APIs in the reactive path.
 
 ## Next planned work
 
-Before the next package release, reconcile the existing `0.2.1` tag with the
-verified source state. The tag points to `244e4f204e178764c450c5777a77395a477aa118`,
-before PR #11's macro argument validation fix; there is no GitHub Release for
-the tag, and ScreenKit-Examples still resolves ScreenKit 0.2.0. Validate the
-chosen release candidate through the consumer project before publishing it.
+The stale `0.2.1` tag remains unchanged at
+`244e4f204e178764c450c5777a77395a477aa118`. ScreenKit `0.3.0` is now tagged at
+`64ee23ec7500dcf62b552285578e6317e35d2dc5`, which includes PR #11 and the
+reactive `ScreenState` API. No public API removals were found in the source diff
+since `0.2.1`; the release is additive.
+
+The release candidate was validated in an isolated copy of ScreenKit-Examples
+with ScreenKit from current `main` before the tag was created. ScreenKitLab and
+ToNaTo each passed on iOS 18.6 and iOS 27 (31 and 82 tests respectively, with no
+failures or skips). The consumer `.xcresult` bundles are retained under
+`/tmp/ScreenKit-ReleaseEvidence-20260923/Examples-xcresult/`.
+
+ScreenKit-Examples still pins ScreenKit `0.2.0` and Patchwork `0.1.2`.
+Patchwork `0.1.2` requires ScreenKit `0.2.0` exactly, so that pair cannot
+resolve with ScreenKit `0.3.0`. Patchwork PR #4 updates its exact dependency to
+`0.3.0`; `swift package resolve`, the iOS 18.6 simulator test (1 test), and the
+DocC CI build passed. After PR #4 is merged, release Patchwork `0.1.3`, then
+update ScreenKit-Examples to the compatible package pair and rerun its tests
+against the published tags.
