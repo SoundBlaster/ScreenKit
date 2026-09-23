@@ -241,20 +241,45 @@ refresh after scrolling, not automatic observation through `ScreenState`.
 - [x] Keep README and DocC state examples executable: they start with a section
       or show the section being added.
 
-### Previously completed release evidence
+### Fresh release-gate verification (2026-09-23)
 
-Earlier iOS 18 simulator, DocC, symbol-scan, and consumer-CI results are recorded
-in their original PRs. This change reruns the package tests and iOS 18 simulator
-suite; a release still requires fresh evidence for every gate listed below.
+Toolchain: Xcode 27.0 (27A266), iOS 18.6 and iOS 27.0 simulators.
 
-### Fresh package verification
-
-- iOS 18.6 simulator: 28 tests passed, 0 failures, 0 skips. Result bundle:
-  `/tmp/ScreenKit-NegativeMacros-Final-20260923.xcresult`.
-- `swift test`: 10 macro tests passed, 0 failures.
-- DocC generated for the iOS 18 target with the GitHub Actions command and the
-  iOS 27 SDK; no warnings. Output:
-  `/tmp/ScreenKit-Identity-DocC-Verified-20260923`.
+- `swift test`: 10 macro tests passed, 0 failures. Log:
+  `/tmp/ScreenKit-swift-test-ReleaseGate-20260923.log`.
+- ScreenKit iOS 18.6 simulator: 28 tests passed, 0 failures, 0 skips. Result:
+  `/tmp/ScreenKit-ReleaseGate-20260923.xcresult`.
+- DocC generated with the exact GitHub Actions command, targeting
+  `arm64-apple-ios18.0` with the iOS 27.0 SDK. No warnings, unresolved-symbol
+  messages, or errors appeared in the build log:
+  `/tmp/ScreenKit-ReleaseGate-DocC-20260923.log`. Generated Pages output is in
+  the ignored `docs/` directory; the redirect, `.nojekyll`, and ScreenKit
+  module page were checked.
+- The generated ScreenState documentation declares iOS, iPadOS, and Mac
+  Catalyst availability. A search of generated DocC JSON found no unresolved
+  symbol markers.
+- ScreenKit-Examples resolved ScreenKit 0.2.0 at
+  `32a81068dc7d4dfc1ff77633aa20c58bc9470012` and Patchwork 0.1.2 at
+  `6374df05819de9feddb5492ce4cb2463411a081f`.
+- ScreenKitLab consumer tests: 31 passed, 0 failures, 0 skips. Result and
+  extracted metrics:
+  `/tmp/ScreenKitLab-ReleaseGate-Final-20260923.xcresult`,
+  `/tmp/ScreenKitLab-ReleaseGate-20260923-metrics.json`.
+- ToNaTo consumer tests: 82 passed, 0 failures, 0 skips. Result and extracted
+  metrics:
+  `/tmp/ToNaTo-ReleaseGate-20260923.xcresult`,
+  `/tmp/ToNaTo-ReleaseGate-20260923-metrics.json`.
+- Both consumer apps built with `IPHONEOS_DEPLOYMENT_TARGET=18.0`. Logs:
+  `/tmp/ScreenKitLab-iOS18-ReleaseGate-20260923.log` and
+  `/tmp/ToNaTo-iOS18-ReleaseGate-20260923.log`.
+- Xcode 27's newer `xcresulttool get test-results summary` returned an empty
+  `unknown` summary for the consumer runs. The legacy result records report
+  successful actions with 31 and 82 tests, respectively, and zero failures or
+  skips; these records are retained in the metrics files above.
+- Consumer compilation emitted warnings in example/test targets:
+  non-Sendable completion closures in ScreenKitLab tests, weak variables that
+  are never mutated in ToNaTo tests, and missing launch/orientation metadata in
+  both app targets. DocC emitted no unresolved-symbol warnings.
 - `git diff --check` passed.
 
 ### Release gates
@@ -273,14 +298,22 @@ requirement for iOS 27-only APIs in the reactive path.
 
 ## Next planned work
 
-The next changes should be delivered in small, reviewable steps:
+The stale `0.2.1` tag remains unchanged at
+`244e4f204e178764c450c5777a77395a477aa118`. ScreenKit `0.3.0` is now tagged at
+`64ee23ec7500dcf62b552285578e6317e35d2dc5`, which includes PR #11 and the
+reactive `ScreenState` API. No public API removals were found in the source diff
+since `0.2.1`; the release is additive.
 
-1. Add focused tests for duplicate IDs, the `stableID`-only conformance,
-   reactive removals/reorders/moves, iOS 18 layout observation, and reactive
-   supplementary observation. Keep the existing explicit-refresh UI test
-   labeled as such.
-2. Document identity namespaces and the same-type `Identifiable.ID` constraint
-   in README and DocC, then reconcile every verification row against an
-   executable test.
-3. Re-run the release-gate matrix and attach fresh evidence before publishing
-   the next package version.
+The release candidate was validated in an isolated copy of ScreenKit-Examples
+with ScreenKit from current `main` before the tag was created. ScreenKitLab and
+ToNaTo each passed on iOS 18.6 and iOS 27 (31 and 82 tests respectively, with no
+failures or skips). The consumer `.xcresult` bundles are retained under
+`/tmp/ScreenKit-ReleaseEvidence-20260923/Examples-xcresult/`.
+
+ScreenKit-Examples still pins ScreenKit `0.2.0` and Patchwork `0.1.2`.
+Patchwork `0.1.2` requires ScreenKit `0.2.0` exactly, so that pair cannot
+resolve with ScreenKit `0.3.0`. Patchwork PR #4 updates its exact dependency to
+`0.3.0`; `swift package resolve`, the iOS 18.6 simulator test (1 test), and the
+DocC CI build passed. After PR #4 is merged, release Patchwork `0.1.3`, then
+update ScreenKit-Examples to the compatible package pair and rerun its tests
+against the published tags.
