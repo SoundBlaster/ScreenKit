@@ -1,6 +1,7 @@
 # ScreenKit
 
 [![DocC](https://github.com/SoundBlaster/ScreenKit/actions/workflows/documentation.yml/badge.svg?branch=main)](https://github.com/SoundBlaster/ScreenKit/actions/workflows/documentation.yml)
+[![Latest Release](https://img.shields.io/github/v/release/SoundBlaster/ScreenKit)](https://github.com/SoundBlaster/ScreenKit/releases/latest)
 [![Documentation](https://img.shields.io/badge/Documentation-DocC-blue)](https://soundblaster.github.io/ScreenKit/)
 ![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-orange?logo=swift)
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-lightgrey?logo=apple)
@@ -13,7 +14,9 @@ code does not need to subclass `UIViewController`.
 The package targets iOS 18 and later. It owns one collection view, one diffable
 data source, and the complete snapshot/update lifecycle for each `Screen`.
 Sections and items have stable typed identity, and renderers can be retained
-across updates.
+across updates. Alongside the stateless API, ScreenKit 0.3.0 supports
+feature-owned `ScreenState` models whose observed changes automatically update
+the diffable snapshot.
 
 ```swift
 import ScreenKit
