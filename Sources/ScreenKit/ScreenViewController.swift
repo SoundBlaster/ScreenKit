@@ -32,8 +32,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private let sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     private let supplementaryRenderers: [String: ScreenSupplementaryRenderer<SectionID>]
     private let identityFailureHandler: (@MainActor (String) -> Void)?
-    private let telemetryConfiguration: ScreenTelemetryConfiguration?
-    private let telemetryScreenID: UUID?
+    private let telemetryLifetime: ScreenTelemetryLifetime?
     private var activeUpdateTelemetry: ScreenUpdateTelemetry?
     private var scheduledStateTelemetry: ScreenUpdateTelemetry?
     private var dataSource: UICollectionViewDiffableDataSource<SectionID, Item.ID>!
@@ -72,21 +71,13 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         sectionProvider = screen.sectionProvider
         supplementaryRenderers = Dictionary(uniqueKeysWithValues: screen.supplementaryRenderers.map { ($0.elementKind, $0) })
         self.identityFailureHandler = identityFailureHandler
-        telemetryConfiguration = screen.telemetryConfiguration
-        telemetryScreenID = screen.telemetryConfiguration == nil ? nil : UUID()
+        telemetryLifetime = screen.telemetryConfiguration.map(ScreenTelemetryLifetime.init)
         super.init(nibName: nil, bundle: nil)
         stateUpdateRelay?.controller = self
     }
 
-    isolated deinit {
-        activeUpdateTelemetry?.finish(.cancelled)
-        scheduledStateTelemetry?.finish(.cancelled)
-        for request in pendingUpdates { request.telemetry?.finish(.cancelled) }
-    }
-
     private func makeTelemetry(_ kind: ScreenTelemetryUpdateKind, animated: Bool) -> ScreenUpdateTelemetry? {
-        guard let telemetryConfiguration, let telemetryScreenID else { return nil }
-        return ScreenUpdateTelemetry(configuration: telemetryConfiguration, screenID: telemetryScreenID, kind: kind, animated: animated)
+        telemetryLifetime?.make(kind, animated: animated)
     }
 
     @available(*, unavailable)

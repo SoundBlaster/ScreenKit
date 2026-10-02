@@ -65,6 +65,9 @@ its own number of mutations. No telemetry callback changes Observation schedulin
 Each begun interval gets one terminal boundary. Outcomes are `completed`,
 `cancelled` (controller release), `rejected` (identity), or `stateUnavailable`
 (weak state read failed). Active and pending intervals close on controller release.
+Release timestamps are captured immediately; cancellation delivery is deferred
+to the main actor without retaining the controller or state. Completed sessions
+leave the lifetime registry immediately, so it does not grow across updates.
 Ignored structural calls on reactive screens are not accepted updates and emit
 no update interval. Invalid identity closes intervals before its precondition.
 
