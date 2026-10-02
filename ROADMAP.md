@@ -1,5 +1,15 @@
 # ScreenKit roadmap
 
+## UI telemetry prototype (2026-10-02)
+
+The optional telemetry contract is defined in [TELEMETRY.md](TELEMETRY.md).
+It adds source interval boundaries, monotonic durations, terminal outcomes,
+controller/update correlation, work counts, signposts, and a bounded raw recorder.
+The external OpenTelemetry adapter and consumer/overhead smoke tests live in
+`ScreenKit-Examples/Packages/ScreenKitOpenTelemetry`; neither library acquires
+an OpenTelemetry dependency. This milestone covers update-settled telemetry,
+not frame presentation, a five-backend benchmark, or production OTLP delivery.
+
 This document is the canonical plan for `ScreenState`, stable identity, and
 automatic observation in ScreenKit. It records the contract that the package
 offers to feature code, the compatibility rules for existing UIKit models, and
