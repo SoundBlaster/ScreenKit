@@ -32,6 +32,9 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private let sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     private let supplementaryRenderers: [String: ScreenSupplementaryRenderer<SectionID>]
     private let identityFailureHandler: (@MainActor (String) -> Void)?
+    private let telemetryLifetime: ScreenTelemetryLifetime?
+    private var activeUpdateTelemetry: ScreenUpdateTelemetry?
+    private var scheduledStateTelemetry: ScreenUpdateTelemetry?
     private var dataSource: UICollectionViewDiffableDataSource<SectionID, Item.ID>!
     private var itemsByID: [Item.ID: Item] = [:]
     private var renderersByID: [Item.ID: ScreenCellRenderer<Item>] = [:]
@@ -45,6 +48,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private struct Request {
         let update: Update
         let completion: (@MainActor () -> Void)?
+        let telemetry: ScreenUpdateTelemetry?
     }
 
     private var pendingUpdates: [Request] = []
@@ -67,8 +71,13 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         sectionProvider = screen.sectionProvider
         supplementaryRenderers = Dictionary(uniqueKeysWithValues: screen.supplementaryRenderers.map { ($0.elementKind, $0) })
         self.identityFailureHandler = identityFailureHandler
+        telemetryLifetime = screen.telemetryConfiguration.map(ScreenTelemetryLifetime.init)
         super.init(nibName: nil, bundle: nil)
         stateUpdateRelay?.controller = self
+    }
+
+    private func makeTelemetry(_ kind: ScreenTelemetryUpdateKind, animated: Bool) -> ScreenUpdateTelemetry? {
+        telemetryLifetime?.make(kind, animated: animated)
     }
 
     @available(*, unavailable)
@@ -104,6 +113,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         ])
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { [weak self] collection, indexPath, id in
             guard let self, let item = itemsByID[id], let renderer = renderersByID[id] else { return nil }
+            activeUpdateTelemetry?.counts.cellProviderCalls += 1
             guard stateReader != nil else {
                 return renderer.cell(in: collection, at: indexPath, item: item)
             }
@@ -123,15 +133,18 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
                 sectionID: id
             )
         }
+        let telemetry = makeTelemetry(.initial, animated: false)
         title = titleProvider()
         let sections: [ScreenSection<SectionID, Item>]
         if stateReader != nil {
+            telemetry?.begin(.stateRead)
             sections = readObservedState() ?? []
+            telemetry?.end(.stateRead)
         } else {
             sections = initialSections ?? []
         }
         initialSections = nil
-        enqueueSections(sections, animated: false, completion: nil)
+        enqueueSections(sections, animated: false, completion: nil, telemetry: telemetry)
     }
 
     private func readObservedState() -> [ScreenSection<SectionID, Item>]? {
@@ -148,11 +161,19 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     fileprivate func scheduleStateUpdate() {
         guard stateReader != nil, !isStateUpdateScheduled else { return }
         isStateUpdateScheduled = true
+        scheduledStateTelemetry = makeTelemetry(.state, animated: true)
+        scheduledStateTelemetry?.begin(.schedulingWait)
         Task { @MainActor [weak self] in
             guard let self else { return }
             isStateUpdateScheduled = false
-            guard let sections = readObservedState() else { return }
-            enqueueSections(sections, animated: true, completion: nil)
+            let telemetry = scheduledStateTelemetry
+            scheduledStateTelemetry = nil
+            telemetry?.end(.schedulingWait)
+            telemetry?.begin(.stateRead)
+            let sections = readObservedState()
+            telemetry?.end(.stateRead)
+            guard let sections else { telemetry?.finish(.stateUnavailable); return }
+            enqueueSections(sections, animated: true, completion: nil, telemetry: telemetry)
         }
     }
 
@@ -217,18 +238,26 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     private func enqueueSections(
         _ sections: [ScreenSection<SectionID, Item>],
         animated: Bool,
-        completion: (@MainActor () -> Void)?
+        completion: (@MainActor () -> Void)?,
+        telemetry suppliedTelemetry: ScreenUpdateTelemetry? = nil
     ) {
+        let telemetry = suppliedTelemetry ?? makeTelemetry(.sections, animated: animated)
+        telemetry?.counts.sections = sections.count
+        telemetry?.counts.items = sections.reduce(0) { $0 + $1.items.count }
+        telemetry?.begin(.identityValidation)
         let sectionIDs = sections.map(\.id)
         if let message = ScreenIdentityValidator.duplicateSectionMessage(in: sectionIDs) {
+            telemetry?.finish(.rejected)
             failIdentityValidation(message)
             return
         }
         if let message = ScreenIdentityValidator.duplicateItemMessage(in: sections, id: itemIDProvider) {
+            telemetry?.finish(.rejected)
             failIdentityValidation(message)
             return
         }
-        enqueue(.sections(sections, animated: animated), completion: completion)
+        telemetry?.end(.identityValidation)
+        enqueue(.sections(sections, animated: animated), completion: completion, telemetry: telemetry)
     }
 
     private func failIdentityValidation(_ message: String) {
@@ -247,9 +276,16 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         enqueue(.supplementary, completion: completion)
     }
 
-    private func enqueue(_ update: Update, completion: (@MainActor () -> Void)?) {
+    private func enqueue(_ update: Update, completion: (@MainActor () -> Void)?, telemetry suppliedTelemetry: ScreenUpdateTelemetry? = nil) {
         loadViewIfNeeded()
-        pendingUpdates.append(Request(update: update, completion: completion))
+        let telemetry: ScreenUpdateTelemetry?
+        switch update {
+        case .sections: telemetry = suppliedTelemetry
+        case .content: telemetry = makeTelemetry(.content, animated: false)
+        case .supplementary: telemetry = makeTelemetry(.supplementary, animated: false)
+        }
+        telemetry?.begin(.queueWait)
+        pendingUpdates.append(Request(update: update, completion: completion, telemetry: telemetry))
         drainUpdates()
     }
 
@@ -262,19 +298,33 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         while !isApplyingUpdate, !pendingUpdates.isEmpty {
             isApplyingUpdate = true
             let request = pendingUpdates.removeFirst()
+            activeUpdateTelemetry = request.telemetry
+            request.telemetry?.end(.queueWait)
             switch request.update {
             case let .sections(sections, animated):
                 applySections(sections, animated: animated) { [weak self] in self?.finish(request) }
             case .content:
+                activeUpdateTelemetry?.begin(.snapshotPrepare)
                 var snapshot = dataSource.snapshot()
                 snapshot.reconfigureItems(snapshot.itemIdentifiers)
+                activeUpdateTelemetry?.counts.sections = snapshot.numberOfSections
+                activeUpdateTelemetry?.counts.items = snapshot.numberOfItems
+                activeUpdateTelemetry?.counts.reconfiguredItems = snapshot.numberOfItems
+                activeUpdateTelemetry?.end(.snapshotPrepare)
+                activeUpdateTelemetry?.begin(.snapshotApply)
                 dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
                     guard let self else { return }
+                    activeUpdateTelemetry?.end(.snapshotApply)
                     title = titleProvider()
                     updateVisibleSupplementaries()
                     finish(request)
                 }
             case .supplementary:
+                if let telemetry = activeUpdateTelemetry {
+                    let snapshot = dataSource.snapshot()
+                    telemetry.counts.sections = snapshot.numberOfSections
+                    telemetry.counts.items = snapshot.numberOfItems
+                }
                 updateVisibleSupplementaries()
                 finish(request)
             }
@@ -286,6 +336,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         animated: Bool,
         completion: @escaping @MainActor () -> Void
     ) {
+        activeUpdateTelemetry?.begin(.snapshotPrepare)
         let items = sections.flatMap(\.items)
         let ids = items.map(itemIDProvider)
         let previous = renderersByID
@@ -302,6 +353,7 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         } else {
             nextRenderers = makeRenderers()
         }
+        activeUpdateTelemetry?.counts.rendererFactoryCalls = items.count
         // Outgoing cells may still be requested during an animated transition.
         // Keep their payloads/renderers until UIKit completes this snapshot.
         itemsByID.merge(nextItems) { _, new in new }
@@ -315,9 +367,15 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
         let replaced = retained.filter { previous[$0]?.identity != nextRenderers[$0]?.identity }
         let replacedSet = Set(replaced)
         snapshot.reloadItems(replaced)
-        snapshot.reconfigureItems(retained.filter { !replacedSet.contains($0) })
+        let reconfigured = retained.filter { !replacedSet.contains($0) }
+        snapshot.reconfigureItems(reconfigured)
+        activeUpdateTelemetry?.counts.reloadedItems = replaced.count
+        activeUpdateTelemetry?.counts.reconfiguredItems = reconfigured.count
+        activeUpdateTelemetry?.end(.snapshotPrepare)
+        activeUpdateTelemetry?.begin(.snapshotApply)
         dataSource.apply(snapshot, animatingDifferences: animated) { [weak self] in
             guard let self else { return }
+            activeUpdateTelemetry?.end(.snapshotApply)
             itemsByID = nextItems
             renderersByID = nextRenderers
             title = titleProvider()
@@ -345,10 +403,13 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     }
 
     private func updateVisibleSupplementaries() {
+        activeUpdateTelemetry?.begin(.supplementary)
+        defer { activeUpdateTelemetry?.end(.supplementary) }
         for (kind, renderer) in supplementaryRenderers {
             for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(ofKind: kind) {
                 guard let id = sectionID(at: indexPath.section),
                       let view = collectionView.supplementaryView(forElementKind: kind, at: indexPath) else { continue }
+                activeUpdateTelemetry?.counts.supplementaryUpdates += 1
                 if stateReader != nil {
                     let relay = stateUpdateRelay
                     withObservationTracking {
@@ -365,8 +426,12 @@ public final class ScreenViewController<SectionID: Hashable & Sendable, Item: Id
     }
 
     private func finish(_ request: Request) {
+        request.telemetry?.begin(.layout)
         invalidateLayout()
         collectionView.layoutIfNeeded()
+        request.telemetry?.end(.layout)
+        request.telemetry?.finish()
+        activeUpdateTelemetry = nil
         // Keep the queue locked while user code runs: reentrant requests append after
         // requests already queued, and cannot overwrite the current transition's maps.
         request.completion?()

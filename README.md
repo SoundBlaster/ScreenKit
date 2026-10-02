@@ -118,15 +118,20 @@ state manager. It fits below page and flow modules in an FSD-style architecture.
 
 ## Documentation
 
+Opt-in update telemetry uses `screen.telemetry(sink, name: "catalog")` with
+Apple signposts, a bounded raw recorder, or an external adapter. It measures
+snapshot/layout completion, not display presentation. See
+[`TELEMETRY.md`](TELEMETRY.md) for clocks, phase boundaries, outcomes, and the
+independent OpenTelemetry prototype. ScreenKit has no OpenTelemetry dependency.
+
 Browse the [ScreenKit API documentation](https://soundblaster.github.io/ScreenKit/).
 The implementation roadmap for state, identity, and observation is documented
 in [`ROADMAP.md`](ROADMAP.md).
 
 ## Development
 
-UIKit tests run from an iOS simulator. The app-level ScreenKitLab integration
-tests live in the Puzzle workspace while the package is being extracted from the
-prototype.
+UIKit tests run from an iOS simulator. App-level ScreenKitLab and ToNaTo tests
+live in [ScreenKit-Examples](https://github.com/SoundBlaster/ScreenKit-Examples).
 
 ## License
 

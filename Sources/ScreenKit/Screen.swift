@@ -11,6 +11,7 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
     internal var titleProvider: () -> String = { "" }
     internal var sectionProvider: ((SectionID, NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection)?
     internal var supplementaryRenderers: [ScreenSupplementaryRenderer<SectionID>] = []
+    internal var telemetryConfiguration: ScreenTelemetryConfiguration?
 
     public init(_ sections: [ScreenSection<SectionID, Item>], renderer: @escaping (Item) -> ScreenCellRenderer<Item>) {
         self.sections = sections
@@ -56,6 +57,19 @@ public struct Screen<SectionID: Hashable & Sendable, Item: Identifiable>: Screen
         precondition(Set(renderers.map(\.elementKind)).count == renderers.count, "Supplementary kinds must be unique")
         var copy = self
         copy.supplementaryRenderers = renderers
+        return copy
+    }
+
+    /// Measures controller updates with a fixed screen name and an optional sink.
+    ///
+    /// Each controller gets independent correlation IDs. With no sink attached,
+    /// ScreenKit creates no intervals, timestamps, or work counters. The measured
+    /// update ends after layout, before client completion code; it does not
+    /// measure display presentation or arbitrary SwiftUI work outside that update.
+    public func telemetry(_ sink: any ScreenTelemetrySink, name: String) -> Self {
+        precondition(!name.isEmpty, "Telemetry screen name must not be empty")
+        var copy = self
+        copy.telemetryConfiguration = ScreenTelemetryConfiguration(name: name, sink: sink)
         return copy
     }
 

@@ -164,6 +164,14 @@ when a collection needs to hold different screen types.
 - ``PagesScreen``
 - ``SplitScreen``
 
+### Measure updates
+
+- <doc:MeasuringUpdates>
+- ``ScreenTelemetrySink``
+- ``ScreenTelemetryMultiplexer``
+- ``ScreenSignpostTelemetry``
+- ``ScreenTelemetryRecorder``
+
 ## Migration tutorial
 
 - <doc:UIKitCollectionMigration>
